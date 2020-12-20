@@ -69,7 +69,7 @@ pub enum SmlTime {
                      season_time_offset: i16 },
 }        
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum SmlError {
     UnexpectedEof,
     TLUnknownType,
@@ -98,12 +98,12 @@ pub fn parse_buf_to_smlbinfile(buf: &[u8]) -> SmlBinFile
 fn parse_into_binlist<'a, T>(buf: T) -> Vec<SmlBinList>
     where T: IntoIterator<Item=&'a u8>
 {
-    let _el = sml_type_from_iter(buf.into_iter());
+    let _el = sml_type_from_iter(&mut buf.into_iter());
 
     Vec::new()
 }
 
-fn sml_type_from_iter<'a, T>(i: T) -> Result<SmlBinElement>
+fn sml_type_from_iter<'a, T>(i: &mut T) -> Result<SmlBinElement>
     where T: Iterator<Item=&'a u8>
 {
     let _tl: SmlTL = sml_tl_from_iter(i)?;
@@ -111,7 +111,7 @@ fn sml_type_from_iter<'a, T>(i: T) -> Result<SmlBinElement>
     Ok(SmlBinElement::EndOfMsg)
 }
 
-fn sml_tl_from_iter<'a, T>(mut i: T) -> Result<SmlTL>
+fn sml_tl_from_iter<'a, T>(i: &mut T) -> Result<SmlTL>
     where T: Iterator<Item=&'a u8>
 {
     let el = i.next().ok_or(SmlError::UnexpectedEof)?;
@@ -134,13 +134,16 @@ fn sml_tl_from_iter<'a, T>(mut i: T) -> Result<SmlTL>
  * result, giving the new length. If bit 7 is set an addition continuation
  * length field follows the current field. Bit 4 to 6 must be zero.
  */
-fn parse_tl<'a, T>(tl: u8, i: T) -> Result<SmlTL>
+fn parse_tl<'a, T>(tl: u8, i: &mut T) -> Result<SmlTL>
     where T: Iterator<Item=&'a u8>
 {
     if tl & TL_OCTET_STR.1 == TL_OCTET_STR.0 {
         let size = parse_tl_len(tl, i)?;
 
-        Ok((TL_OCTET_STR.0, size))
+        match size {
+            0 => Err(SmlError::TLInvalidLen),
+            _ => Ok((TL_OCTET_STR.0, size)),
+        }
     } else if tl & TL_BOOL.1 == TL_BOOL.0 {
         /* type bool has fixed length field, we don't need to parse it */
         Ok((TL_BOOL.0, 2))
@@ -167,7 +170,7 @@ fn parse_tl<'a, T>(tl: u8, i: T) -> Result<SmlTL>
     }
 }
 
-fn parse_tl_len<'a, T>(tl: u8, i: T) -> Result<u32>
+fn parse_tl_len<'a, T>(tl: u8, i: &mut T) -> Result<u32>
     where T: Iterator<Item=&'a u8>
 {
     let size: u32 = tl as u32 & 0x0f;
@@ -179,7 +182,7 @@ fn parse_tl_len<'a, T>(tl: u8, i: T) -> Result<u32>
     }
 }
 
-fn parse_tl_len_cont<'a, T>(size: u32, mut i: T,
+fn parse_tl_len_cont<'a, T>(size: u32, i: &mut T,
                             size_bits: usize) -> Result<u32>
     where T: Iterator<Item=&'a u8>
 {
@@ -211,14 +214,54 @@ mod tests {
 }
 
 #[test]
-fn tl_octet_str() {
-    assert_eq!(parse_tl(0x01, [].iter()).unwrap(),
+fn tl_octet_str_simple() {
+    assert_eq!(parse_tl(0x01, &mut [].iter()).unwrap(),
                (TL_OCTET_STR.0, 1));
-    assert_eq!(parse_tl(0x02, [].iter()).unwrap(),
+    assert_eq!(parse_tl(0x02, &mut [].iter()).unwrap(),
                (TL_OCTET_STR.0, 2));
-
-    let cont_iter = [ 0x02 ].iter();
-    assert_eq!(parse_tl(0x0f, cont_iter).unwrap(), (TL_OCTET_STR.0, 15));
-    //assert_eq!(*cont_iter.next().unwrap(), 0x02);
-    
 }
+
+#[test]
+fn tl_octet_str_doesnt_consume() {
+    let dont_touch = &mut [ 0x02 ].iter();
+    assert_eq!(parse_tl(0x0f, dont_touch).unwrap(), (TL_OCTET_STR.0, 15));
+    assert_eq!(dont_touch.next(), Some(&0x02));
+}
+
+#[test]
+fn tl_octet_str_cont_single() {
+    let cont_iter = &mut [ 0x02, 0xff ].iter();
+    assert_eq!(parse_tl(0x8f, cont_iter).unwrap(),
+               (TL_OCTET_STR.0, 0xf2));
+    assert_eq!(cont_iter.next(), Some(&0xff));
+}
+
+#[test]
+fn tl_octet_str_cont_max() {
+    let cont_iter = &mut [ 0x82, 0x83, 0x84, 0x85,
+                           0x86, 0x87, 0x08, 0x11 ].iter();
+    assert_eq!(parse_tl(0x81, cont_iter).unwrap(),
+               (TL_OCTET_STR.0, 0x1234_5678));
+    assert_eq!(cont_iter.next(), Some(&0x11));
+}
+
+#[test]
+fn tl_octet_str_strange_len() {
+    let cont_iter = &mut [ 0x02, 0xff ].iter();
+    assert_eq!(parse_tl(0x80, cont_iter).unwrap(),
+               (TL_OCTET_STR.0, 0x02));
+    assert_eq!(cont_iter.next(), Some(&0xff));
+}
+
+#[test]
+fn tl_octet_str_wrong_len() {
+    assert_eq!(parse_tl(0x00, &mut [].iter()), Err(SmlError::TLInvalidLen));
+}
+
+#[test]
+fn tl_test_oversized_len() {
+    let cont_iter = &mut [ 0x82, 0x83, 0x84, 0x85,
+                           0x86, 0x87, 0x88, 0x01 ].iter();
+    assert_eq!(parse_tl(0x81, cont_iter), Err(SmlError::TLLenOutOfBounds));
+}
+    
