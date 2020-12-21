@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
 const TL_OCTET_STR: (u8, u8) = (0x00, 0x70);
-const TL_BOOL: (u8, u8) = (0x42, 0xff);
-const TL_INT: (u8, u8) = (0x50, 0xf0);
-const TL_UINT: (u8, u8) = (0x60, 0xf0);
+const TL_BOOL: (u8, u8) = (0x40, 0x70);
+const TL_INT: (u8, u8) = (0x50, 0x70);
+const TL_UINT: (u8, u8) = (0x60, 0x70);
 const TL_LIST: (u8, u8) = (0x70, 0x70);
 
 pub struct SmlBinFile {
@@ -74,7 +74,7 @@ pub enum SmlError {
     UnexpectedEof,
     TLUnknownType,
     TLInvalidLen,
-    TLInvalidIntLen,
+    TLInvalidPrimLen(u32),
     TLLenOutOfBounds,
 }
 
@@ -145,21 +145,25 @@ fn parse_tl<'a, T>(tl: u8, i: &mut T) -> Result<SmlTL>
             _ => Ok((TL_OCTET_STR.0, size)),
         }
     } else if tl & TL_BOOL.1 == TL_BOOL.0 {
-        /* type bool has fixed length field, we don't need to parse it */
-        Ok((TL_BOOL.0, 2))
+        let size = parse_tl_len(tl, i)?;
+
+        match size {
+            2 => Ok((TL_BOOL.0, size)),
+            l => Err(SmlError::TLInvalidPrimLen(l)),
+        }
     } else if tl & TL_INT.1 == TL_INT.0 {
         let size = parse_tl_len(tl, i)?;
 
         match size {
             2 | 3 | 5 | 9 => Ok((TL_INT.0, size)),
-            _ => Err(SmlError::TLInvalidIntLen),
+            l => Err(SmlError::TLInvalidPrimLen(l)),
         }
     } else if tl & TL_UINT.1 == TL_UINT.0 {
         let size = parse_tl_len(tl, i)?;
 
         match size {
             2 | 3 | 5 | 9 => Ok((TL_UINT.0, size)),
-            _ => Err(SmlError::TLInvalidIntLen),
+            l => Err(SmlError::TLInvalidPrimLen(l)),
         }
     } else if tl & TL_LIST.1 == TL_LIST.0 {
         let size = parse_tl_len(tl, i)?;
@@ -214,7 +218,7 @@ mod tests {
 }
 
 #[test]
-fn tl_octet_str_simple() {
+fn t_tl_octet_str_simple() {
     assert_eq!(parse_tl(0x01, &mut [].iter()).unwrap(),
                (TL_OCTET_STR.0, 1));
     assert_eq!(parse_tl(0x02, &mut [].iter()).unwrap(),
@@ -222,14 +226,14 @@ fn tl_octet_str_simple() {
 }
 
 #[test]
-fn tl_octet_str_doesnt_consume() {
+fn t_tl_octet_str_doesnt_consume() {
     let dont_touch = &mut [ 0x02 ].iter();
     assert_eq!(parse_tl(0x0f, dont_touch).unwrap(), (TL_OCTET_STR.0, 15));
     assert_eq!(dont_touch.next(), Some(&0x02));
 }
 
 #[test]
-fn tl_octet_str_cont_single() {
+fn t_tl_octet_str_cont_single() {
     let cont_iter = &mut [ 0x02, 0xff ].iter();
     assert_eq!(parse_tl(0x8f, cont_iter).unwrap(),
                (TL_OCTET_STR.0, 0xf2));
@@ -237,7 +241,7 @@ fn tl_octet_str_cont_single() {
 }
 
 #[test]
-fn tl_octet_str_cont_max() {
+fn t_tl_octet_str_cont_max() {
     let cont_iter = &mut [ 0x82, 0x83, 0x84, 0x85,
                            0x86, 0x87, 0x08, 0x11 ].iter();
     assert_eq!(parse_tl(0x81, cont_iter).unwrap(),
@@ -246,7 +250,7 @@ fn tl_octet_str_cont_max() {
 }
 
 #[test]
-fn tl_octet_str_strange_len() {
+fn t_tl_octet_str_strange_len() {
     let cont_iter = &mut [ 0x02, 0xff ].iter();
     assert_eq!(parse_tl(0x80, cont_iter).unwrap(),
                (TL_OCTET_STR.0, 0x02));
@@ -254,12 +258,104 @@ fn tl_octet_str_strange_len() {
 }
 
 #[test]
-fn tl_octet_str_wrong_len() {
+fn t_tl_octet_str_wrong_len() {
     assert_eq!(parse_tl(0x00, &mut [].iter()), Err(SmlError::TLInvalidLen));
 }
 
 #[test]
-fn tl_test_oversized_len() {
+fn t_tl_bool() {
+    assert_eq!(parse_tl(0x42, &mut [].iter()).unwrap(),
+               (TL_BOOL.0, 2));
+}
+
+#[test]
+fn t_tl_bool_wrong_len() {
+    assert_eq!(parse_tl(0x41, &mut [].iter()),
+               Err(SmlError::TLInvalidPrimLen(1)));
+    assert_eq!(parse_tl(0x43, &mut [].iter()),
+               Err(SmlError::TLInvalidPrimLen(3)));
+}
+
+#[test]
+fn t_tl_bool_strange_len() {
+    assert_eq!(parse_tl(0x80 | 0x40, &mut [ 0x02 ].iter()).unwrap(),
+               (TL_BOOL.0, 2));
+    assert_eq!(parse_tl(0x80 | 0x40, &mut [ 0x80, 0x02 ].iter()).unwrap(),
+               (TL_BOOL.0, 2));
+}
+
+#[test]
+fn t_tl_i8() {
+    assert_eq!(parse_tl(0x52, &mut [].iter()).unwrap(),
+               (TL_INT.0, 2));
+}
+
+#[test]
+fn t_tl_i16() {
+    assert_eq!(parse_tl(0x53, &mut [].iter()).unwrap(),
+               (TL_INT.0, 3));
+}
+
+#[test]
+fn t_tl_i32() {
+    assert_eq!(parse_tl(0x55, &mut [].iter()).unwrap(),
+               (TL_INT.0, 5));
+}
+
+#[test]
+fn t_tl_i64() {
+    assert_eq!(parse_tl(0x59, &mut [].iter()).unwrap(),
+               (TL_INT.0, 9));
+}
+
+#[test]
+fn t_tl_int_wrong_len() {
+    for i in 0..15 {
+        match i {
+            2 | 3 | 5 | 9 => { },
+            l =>  assert_eq!(parse_tl(0x50 | l, &mut [].iter()),
+                             Err(SmlError::TLInvalidPrimLen(l as u32)))
+        }
+    }
+}
+
+#[test]
+fn t_tl_u8() {
+    assert_eq!(parse_tl(0x62, &mut [].iter()).unwrap(),
+               (TL_UINT.0, 2));
+}
+
+#[test]
+fn t_tl_u16() {
+    assert_eq!(parse_tl(0x63, &mut [].iter()).unwrap(),
+               (TL_UINT.0, 3));
+}
+
+#[test]
+fn t_tl_u32() {
+    assert_eq!(parse_tl(0x65, &mut [].iter()).unwrap(),
+               (TL_UINT.0, 5));
+}
+
+#[test]
+fn t_tl_u64() {
+    assert_eq!(parse_tl(0x69, &mut [].iter()).unwrap(),
+               (TL_UINT.0, 9));
+}
+
+#[test]
+fn t_tl_uint_wrong_len() {
+    for i in 0..15 {
+        match i {
+            2 | 3 | 5 | 9 => { },
+            l =>  assert_eq!(parse_tl(0x60 | l, &mut [].iter()),
+                             Err(SmlError::TLInvalidPrimLen(l as u32)))
+        }
+    }
+}
+
+#[test]
+fn t_tl_test_oversized_len() {
     let cont_iter = &mut [ 0x82, 0x83, 0x84, 0x85,
                            0x86, 0x87, 0x88, 0x01 ].iter();
     assert_eq!(parse_tl(0x81, cont_iter), Err(SmlError::TLLenOutOfBounds));
