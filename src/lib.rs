@@ -242,7 +242,7 @@ fn parse_int<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
         }
     } else {
         Err(SmlError::UnexpectedEof)
-    }                    
+    }
 }
 
 fn parse_uint<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
@@ -263,7 +263,7 @@ fn parse_uint<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
         }
     } else {
         Err(SmlError::UnexpectedEof)
-    }                    
+    }
 }
 
 fn parse_bool<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
@@ -286,7 +286,7 @@ fn parse_list<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
     for _ in 0..len {
         list_elements.push(sml_bin_el_from_iter(it)?);
     }
-        
+
     Ok(SmlBinElement::List(SmlBinList { list: list_elements }))
 }
 
@@ -456,7 +456,7 @@ fn t_tl_list_long() {
                         &mut [0x8f, 0x8f, 0x8f, 0x8f,
                               0x8f, 0x8f, 0x0e ].iter()).unwrap(),
                (TL_LIST.0, 0xffff_fffe));
-}    
+}
 
 #[test]
 fn t_tl_test_oversized_len() {
