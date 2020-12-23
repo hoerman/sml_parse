@@ -15,7 +15,7 @@ pub struct SmlBinList {
 }
 
 pub enum SmlBinElement {
-    OctectSting(Vec<u8>),
+    OctetString(Vec<u8>),
     I8(i8),
     I16(i16),
     I32(i32),
@@ -74,7 +74,7 @@ pub enum SmlError {
     UnexpectedEof,
     TLUnknownType,
     TLInvalidLen,
-    TLInvalidPrimLen(u32),
+    TLInvalidPrimLen(usize),
     TLLenOutOfBounds,
 }
 
@@ -84,12 +84,10 @@ pub type Result<T> = std::result::Result<T, SmlError>;
  * integer code of the data type, the second element gives the decoded
  * size.
  */
-type SmlTL = (u8, u32);
+type SmlTL = (u8, usize);
 
 pub fn parse_buf_to_smlbinfile(buf: &[u8]) -> SmlBinFile
 {
-    //let mut _iter = buf.into_iter();
-
     let msgs = parse_into_binlist(buf);
     
     SmlBinFile { messages: msgs }
@@ -98,17 +96,24 @@ pub fn parse_buf_to_smlbinfile(buf: &[u8]) -> SmlBinFile
 fn parse_into_binlist<'a, T>(buf: T) -> Vec<SmlBinList>
     where T: IntoIterator<Item=&'a u8>
 {
-    let _el = sml_type_from_iter(&mut buf.into_iter());
+    let _el = sml_bin_el_from_iter(&mut buf.into_iter());
 
     Vec::new()
 }
 
-fn sml_type_from_iter<'a, T>(i: &mut T) -> Result<SmlBinElement>
+fn sml_bin_el_from_iter<'a, T>(i: &mut T) -> Result<SmlBinElement>
     where T: Iterator<Item=&'a u8>
 {
-    let _tl: SmlTL = sml_tl_from_iter(i)?;
+    let tl = sml_tl_from_iter(i)?;
 
-    Ok(SmlBinElement::EndOfMsg)
+    match tl {
+        (t, len) if t == TL_OCTET_STR.0 => parse_octet_str(i, len),
+        (t, len) if t == TL_INT.0 => parse_int(i, len),
+        (t, len) if t == TL_UINT.0 => parse_uint(i, len),
+        (t, len) if t == TL_BOOL.0 => parse_bool(i, len),
+        (t, len) if t == TL_LIST.0 => parse_list(i, len),
+        (_, _) => Ok(SmlBinElement::EndOfMsg)
+    }
 }
 
 fn sml_tl_from_iter<'a, T>(i: &mut T) -> Result<SmlTL>
@@ -174,10 +179,10 @@ fn parse_tl<'a, T>(tl: u8, i: &mut T) -> Result<SmlTL>
     }
 }
 
-fn parse_tl_len<'a, T>(tl: u8, i: &mut T) -> Result<u32>
+fn parse_tl_len<'a, T>(tl: u8, i: &mut T) -> Result<usize>
     where T: Iterator<Item=&'a u8>
 {
-    let size: u32 = tl as u32 & 0x0f;
+    let size = tl as usize & 0x0f;
 
     if tl & 0x80 == 0x80 {
         parse_tl_len_cont(size, i, 4)
@@ -186,8 +191,8 @@ fn parse_tl_len<'a, T>(tl: u8, i: &mut T) -> Result<u32>
     }
 }
 
-fn parse_tl_len_cont<'a, T>(size: u32, i: &mut T,
-                            size_bits: usize) -> Result<u32>
+fn parse_tl_len_cont<'a, T>(size: usize, i: &mut T,
+                            size_bits: usize) -> Result<usize>
     where T: Iterator<Item=&'a u8>
 {
     let ld = i.next().ok_or(SmlError::UnexpectedEof)?;
@@ -197,7 +202,7 @@ fn parse_tl_len_cont<'a, T>(size: u32, i: &mut T,
     } else if size_bits + 4 > 32 {
         Err(SmlError::TLLenOutOfBounds)
     } else {
-        let new_size = (size << 4) | (*ld as u32 & 0x0f);
+        let new_size = (size << 4) | (*ld as usize & 0x0f);
 
         if ld & 0x80 == 0x80 {
             parse_tl_len_cont(new_size, i, size_bits + 4)
@@ -207,7 +212,84 @@ fn parse_tl_len_cont<'a, T>(size: u32, i: &mut T,
     }
 }
 
+fn parse_octet_str<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
+    where T: Iterator<Item=&'a u8>
+{
+    let str: Vec<u8> = it.take(len - 1).map(|v| *v).collect();
+
+    if str.len() == len - 1 {
+        Ok(SmlBinElement::OctetString(str))
+    } else {
+        Err(SmlError::UnexpectedEof)
+    }
+}
+
+fn parse_int<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
+    where T: Iterator<Item=&'a u8>
+{
+    let (val, cnt) = it.take(len - 1)
+                       .fold((0 as i64, 0),
+                             |acc, val| (acc.0 << 8 | *val as i64,
+                                         acc.1 + 1));
+
+    if cnt == len - 1 {
+        match cnt {
+            1 => Ok(SmlBinElement::I8(val as i8)),
+            2 => Ok(SmlBinElement::I16(val as i16)),
+            4 => Ok(SmlBinElement::I32(val as i32)),
+            8 => Ok(SmlBinElement::I64(val as i64)),
+            _ => Err(SmlError::TLInvalidPrimLen(len))
+        }
+    } else {
+        Err(SmlError::UnexpectedEof)
+    }                    
+}
+
+fn parse_uint<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
+    where T: Iterator<Item=&'a u8>
+{
+    let (val, cnt) = it.take(len - 1)
+                       .fold((0 as u64, 0),
+                             |acc, val| (acc.0 << 8 | *val as u64,
+                                         acc.1 + 1));
+
+    if cnt == len - 1 {
+        match cnt {
+            1 => Ok(SmlBinElement::U8(val as u8)),
+            2 => Ok(SmlBinElement::U16(val as u16)),
+            4 => Ok(SmlBinElement::U32(val as u32)),
+            8 => Ok(SmlBinElement::U64(val as u64)),
+            _ => Err(SmlError::TLInvalidPrimLen(len))
+        }
+    } else {
+        Err(SmlError::UnexpectedEof)
+    }                    
+}
+
+fn parse_bool<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
+    where T: Iterator<Item=&'a u8>
+{
+    if len == 2 {
+        let val = it.next().ok_or(SmlError::UnexpectedEof)?;
+
+        Ok(SmlBinElement::Bool(*val > 0))
+    } else {
+        Err(SmlError::TLInvalidPrimLen(len))
+    }
+}
+
+fn parse_list<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
+    where T: Iterator<Item=&'a u8>
+{
+    let mut list_elements = Vec::new();
     
+    for _ in 0..len {
+        list_elements.push(sml_bin_el_from_iter(it)?);
+    }
+        
+    Ok(SmlBinElement::List(SmlBinList { list: list_elements }))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -314,7 +396,7 @@ fn t_tl_int_wrong_len() {
         match i {
             2 | 3 | 5 | 9 => { },
             l =>  assert_eq!(parse_tl(0x50 | l, &mut [].iter()),
-                             Err(SmlError::TLInvalidPrimLen(l as u32)))
+                             Err(SmlError::TLInvalidPrimLen(l as usize)))
         }
     }
 }
@@ -349,10 +431,32 @@ fn t_tl_uint_wrong_len() {
         match i {
             2 | 3 | 5 | 9 => { },
             l =>  assert_eq!(parse_tl(0x60 | l, &mut [].iter()),
-                             Err(SmlError::TLInvalidPrimLen(l as u32)))
+                             Err(SmlError::TLInvalidPrimLen(l as usize)))
         }
     }
 }
+
+#[test]
+fn t_tl_list_simple() {
+    assert_eq!(parse_tl(0x71, &mut [].iter()).unwrap(),
+               (TL_LIST.0, 1));
+    assert_eq!(parse_tl(0x72, &mut [].iter()).unwrap(),
+               (TL_LIST.0, 2));
+}
+
+#[test]
+fn t_tl_list_empty() {
+    assert_eq!(parse_tl(0x70, &mut [].iter()).unwrap(),
+               (TL_LIST.0, 0));
+}
+
+#[test]
+fn t_tl_list_long() {
+    assert_eq!(parse_tl(0x80 | 0x7f,
+                        &mut [0x8f, 0x8f, 0x8f, 0x8f,
+                              0x8f, 0x8f, 0x0e ].iter()).unwrap(),
+               (TL_LIST.0, 0xffff_fffe));
+}    
 
 #[test]
 fn t_tl_test_oversized_len() {
@@ -360,4 +464,3 @@ fn t_tl_test_oversized_len() {
                            0x86, 0x87, 0x88, 0x01 ].iter();
     assert_eq!(parse_tl(0x81, cont_iter), Err(SmlError::TLLenOutOfBounds));
 }
-    
