@@ -10,10 +10,12 @@ pub struct SmlBinFile {
     messages: Vec<SmlBinList>,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct SmlBinList {
     list: Vec<SmlBinElement>
 }
 
+#[derive(Debug, PartialEq)]
 pub enum SmlBinElement {
     OctetString(Vec<u8>),
     I8(i8),
@@ -460,7 +462,105 @@ mod tests {
     fn t_tl_test_oversized_len() {
         let cont_iter = &mut [ 0x82, 0x83, 0x84, 0x85,
                                0x86, 0x87, 0x88, 0x01 ].iter();
+
         assert_eq!(parse_tl(0x81, cont_iter),
                    Err(SmlError::TLLenOutOfBounds));
+    }
+
+    #[test]
+    fn t_tl_parse_octet_str() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_octet_str(i, 9).unwrap(),
+                   SmlBinElement::OctetString(
+                       [ 0x01, 0x02, 0x03, 0x4,
+                         0xaa, 0xbb, 0xcc, 0x10 ].to_vec()));
+        assert_eq!(*i.next().unwrap(), 0xff);
+    }
+
+    #[test]
+    fn t_tl_parse_octet_str_empty() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_octet_str(i, 1).unwrap(),
+                   SmlBinElement::OctetString([ ].to_vec()));
+        assert_eq!(*i.next().unwrap(), 0x01);
+    }
+
+    #[test]
+    fn t_tl_parse_octet_str_short() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_octet_str(i, 11), Err(SmlError::UnexpectedEof));
+    }
+
+    #[test]
+    fn t_tl_parse_octet_str_invalid_len() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_octet_str(i, 0), Err(SmlError::TLInvalidLen));
+    }
+
+    #[test]
+    fn t_tl_parse_int_i8() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_int(i, 2).unwrap(),
+                   SmlBinElement::I8(0x01));
+        assert_eq!(*i.next().unwrap(), 0x02);
+    }
+
+    #[test]
+    fn t_tl_parse_int_i16() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_int(i, 3).unwrap(),
+                   SmlBinElement::I16(0x0102));
+        assert_eq!(*i.next().unwrap(), 0x03);
+    }
+
+    #[test]
+    fn t_tl_parse_int_i32() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_int(i, 5).unwrap(),
+                   SmlBinElement::I32(0x01020304));
+        assert_eq!(*i.next().unwrap(), 0x0aa);
+    }
+
+    #[test]
+    fn t_tl_parse_int_i64() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_int(i, 9).unwrap(),
+                   SmlBinElement::I64(0x01020304_aabbcc10));
+        assert_eq!(*i.next().unwrap(), 0xff);
+    }
+
+    #[test]
+    fn t_tl_parse_int_invalid_len() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_int(i, 1), Err(SmlError::TLInvalidPrimLen(1)));
+        assert_eq!(parse_int(i, 0), Err(SmlError::TLInvalidPrimLen(0)));
+        assert_eq!(parse_int(i, 4), Err(SmlError::TLInvalidPrimLen(4)));
+    }
+
+
+    #[test]
+    fn t_tl_parse_int_invalid_short() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc ].iter();
+
+        assert_eq!(parse_int(i, 9), Err(SmlError::UnexpectedEof));
     }
 }
