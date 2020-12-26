@@ -639,5 +639,75 @@ mod tests {
 
         assert_eq!(parse_bool(i, 1), Err(SmlError::UnexpectedEof));
     }
+
+    #[test]
+    fn t_parse_list_simple() {
+        let i = &mut [ 0x42, 0x01, 0xcc ].iter();
+
+        let list = parse_list(i, 1);
+        let mut ref_list = Vec::new();
+        ref_list.push(SmlBinElement::Bool(true));
+        assert_eq!(list, Ok(SmlBinElement::List(ref_list)));
+        assert_eq!(*i.next().unwrap(), 0xcc);
+    }
+
+    #[test]
+    fn t_parse_list_multiple_elements() {
+        let i = &mut [ 0x42, 0x00, 0x53, 0x01, 0x02 ].iter();
+
+        let list = parse_list(i, 2);
+        let mut ref_list = Vec::new();
+        ref_list.push(SmlBinElement::Bool(false));
+        ref_list.push(SmlBinElement::I16(0x0102));
+        assert_eq!(list, Ok(SmlBinElement::List(ref_list)));
+    }
+
+    #[test]
+    fn t_parse_list_empty() {
+        let i = &mut [ 0x42, 0x01, 0xcc ].iter();
+
+        let list = parse_list(i, 0);
+        let ref_list = Vec::new();
+        assert_eq!(list, Ok(SmlBinElement::List(ref_list)));
+        assert_eq!(*i.next().unwrap(), 0x42);
+    }
+
+    #[test]
+    fn t_parse_list_nested_simple() {
+        let i = &mut [ 0x71, 0x42, 0x08, 0x55 ].iter();
+
+        let list = parse_list(i, 1);
+        let mut ref_list = Vec::new();
+        let mut inner = Vec::new();
+        inner.push(SmlBinElement::Bool(true));
+        ref_list.push(SmlBinElement::List(inner));
+        assert_eq!(list, Ok(SmlBinElement::List(ref_list)));
+        assert_eq!(*i.next().unwrap(), 0x55);
+    }
+
+    #[test]
+    fn t_parse_list_nested_complex() {
+        let i = &mut [ 0x62, 0xaa,
+                       0x72, 0x42, 0x08, 0x71, 0x52, 0x55,
+                       0x04, 0x11, 0x22, 0x33 ].iter();
+
+        let list = parse_list(i, 3);
+
+        let mut ref_list = Vec::new();
+        ref_list.push(SmlBinElement::U8(0xaa));
+
+        let mut inner = Vec::new();
+        inner.push(SmlBinElement::Bool(true));
+
+        let mut inner2 = Vec::new();
+        inner2.push(SmlBinElement::I8(0x55));
+        inner.push(SmlBinElement::List(inner2));
+
+        ref_list.push(SmlBinElement::List(inner));
+
+        ref_list.push(SmlBinElement::OctetString([ 0x11, 0x22, 0x33 ].to_vec()));
+
+        assert_eq!(list, Ok(SmlBinElement::List(ref_list)));
+    }
 }
 
