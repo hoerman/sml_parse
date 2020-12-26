@@ -547,12 +547,69 @@ mod tests {
         assert_eq!(parse_int(i, 5), Err(SmlError::TLInvalidPrimLen(6)));
     }
 
-
     #[test]
     fn t_parse_int_short() {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc ].iter();
 
         assert_eq!(parse_int(i, 8), Err(SmlError::UnexpectedEof));
+    }
+
+    #[test]
+    fn t_parse_uint_u8() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_uint(i, 1).unwrap(),
+                   SmlBinElement::U8(0x01));
+        assert_eq!(*i.next().unwrap(), 0x02);
+    }
+
+    #[test]
+    fn t_parse_uint_u16() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_uint(i, 2).unwrap(),
+                   SmlBinElement::U16(0x0102));
+        assert_eq!(*i.next().unwrap(), 0x03);
+    }
+
+    #[test]
+    fn t_parse_uint_u32() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_uint(i, 4).unwrap(),
+                   SmlBinElement::U32(0x01020304));
+        assert_eq!(*i.next().unwrap(), 0x0aa);
+    }
+
+    #[test]
+    fn t_parse_uint_u64() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_uint(i, 8).unwrap(),
+                   SmlBinElement::U64(0x01020304_aabbcc10));
+        assert_eq!(*i.next().unwrap(), 0xff);
+    }
+
+    #[test]
+    fn t_parse_uint_invalid_len() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_uint(i, 3), Err(SmlError::TLInvalidPrimLen(4)));
+        assert_eq!(parse_uint(i, 0), Err(SmlError::TLInvalidPrimLen(1)));
+        assert_eq!(parse_uint(i, 5), Err(SmlError::TLInvalidPrimLen(6)));
+    }
+
+    #[test]
+    fn t_parse_uint_short() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc ].iter();
+
+        assert_eq!(parse_uint(i, 8), Err(SmlError::UnexpectedEof));
     }
 }
