@@ -612,4 +612,36 @@ mod tests {
 
         assert_eq!(parse_uint(i, 8), Err(SmlError::UnexpectedEof));
     }
+
+    #[test]
+    fn t_parse_bool() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x00,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_bool(i, 1).unwrap(),
+                   SmlBinElement::Bool(true));
+        assert_eq!(*i.next().unwrap(), 0x02);
+
+        assert_eq!(parse_bool(i, 1).unwrap(),
+                   SmlBinElement::Bool(true));
+        assert_eq!(parse_bool(i, 1).unwrap(),
+                   SmlBinElement::Bool(false));
+    }
+
+    #[test]
+    fn t_parse_bool_invalid_len() {
+        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
+                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
+
+        assert_eq!(parse_bool(i, 2), Err(SmlError::TLInvalidPrimLen(3)));
+        assert_eq!(parse_bool(i, 3), Err(SmlError::TLInvalidPrimLen(4)));
+        assert_eq!(parse_bool(i, 0), Err(SmlError::TLInvalidPrimLen(1)));
+    }
+
+    #[test]
+    fn t_parse_bool_short() {
+        let i = &mut [].iter();
+
+        assert_eq!(parse_bool(i, 1), Err(SmlError::UnexpectedEof));
+    }
 }
