@@ -468,7 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn t_tl_parse_octet_str() {
+    fn t_parse_octet_str() {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
@@ -480,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn t_tl_parse_octet_str_empty() {
+    fn t_parse_octet_str_empty() {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
@@ -490,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn t_tl_parse_octet_str_short() {
+    fn t_parse_octet_str_short() {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
@@ -498,7 +498,7 @@ mod tests {
     }
 
     #[test]
-    fn t_tl_parse_int_i8() {
+    fn t_parse_int_i8() {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
@@ -508,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn t_tl_parse_int_i16() {
+    fn t_parse_int_i16() {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
@@ -518,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    fn t_tl_parse_int_i32() {
+    fn t_parse_int_i32() {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
@@ -528,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn t_tl_parse_int_i64() {
+    fn t_parse_int_i64() {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
@@ -538,7 +538,7 @@ mod tests {
     }
 
     #[test]
-    fn t_tl_parse_int_invalid_len() {
+    fn t_parse_int_invalid_len() {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
@@ -549,7 +549,7 @@ mod tests {
 
 
     #[test]
-    fn t_tl_parse_int_short() {
+    fn t_parse_int_short() {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc ].iter();
 
