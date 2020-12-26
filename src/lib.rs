@@ -149,27 +149,27 @@ fn parse_tl<'a, T>(tl: u8, i: &mut T) -> Result<SmlTL>
 
         match size {
             0 => Err(SmlError::TLInvalidLen),
-            _ => Ok((TL_OCTET_STR.0, size)),
+            _ => Ok((TL_OCTET_STR.0, size - 1)),
         }
     } else if tl & TL_BOOL.1 == TL_BOOL.0 {
         let size = parse_tl_len(tl, i)?;
 
         match size {
-            2 => Ok((TL_BOOL.0, size)),
+            2 => Ok((TL_BOOL.0, size - 1)),
             l => Err(SmlError::TLInvalidPrimLen(l)),
         }
     } else if tl & TL_INT.1 == TL_INT.0 {
         let size = parse_tl_len(tl, i)?;
 
         match size {
-            2 | 3 | 5 | 9 => Ok((TL_INT.0, size)),
+            2 | 3 | 5 | 9 => Ok((TL_INT.0, size - 1)),
             l => Err(SmlError::TLInvalidPrimLen(l)),
         }
     } else if tl & TL_UINT.1 == TL_UINT.0 {
         let size = parse_tl_len(tl, i)?;
 
         match size {
-            2 | 3 | 5 | 9 => Ok((TL_UINT.0, size)),
+            2 | 3 | 5 | 9 => Ok((TL_UINT.0, size - 1)),
             l => Err(SmlError::TLInvalidPrimLen(l)),
         }
     } else if tl & TL_LIST.1 == TL_LIST.0 {
@@ -217,9 +217,9 @@ fn parse_tl_len_cont<'a, T>(size: usize, i: &mut T,
 fn parse_octet_str<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
     where T: Iterator<Item=&'a u8>
 {
-    let str: Vec<u8> = it.take(len - 1).map(|v| *v).collect();
+    let str: Vec<u8> = it.take(len).map(|v| *v).collect();
 
-    if str.len() == len - 1 {
+    if str.len() == len {
         Ok(SmlBinElement::OctetString(str))
     } else {
         Err(SmlError::UnexpectedEof)
@@ -229,18 +229,18 @@ fn parse_octet_str<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
 fn parse_int<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
     where T: Iterator<Item=&'a u8>
 {
-    let (val, cnt) = it.take(len - 1)
+    let (val, cnt) = it.take(len)
                        .fold((0 as i64, 0),
                              |acc, val| (acc.0 << 8 | *val as i64,
                                          acc.1 + 1));
 
-    if cnt == len - 1 {
+    if cnt == len {
         match cnt {
             1 => Ok(SmlBinElement::I8(val as i8)),
             2 => Ok(SmlBinElement::I16(val as i16)),
             4 => Ok(SmlBinElement::I32(val as i32)),
             8 => Ok(SmlBinElement::I64(val as i64)),
-            _ => Err(SmlError::TLInvalidPrimLen(len))
+            _ => Err(SmlError::TLInvalidPrimLen(len + 1))
         }
     } else {
         Err(SmlError::UnexpectedEof)
@@ -250,18 +250,18 @@ fn parse_int<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
 fn parse_uint<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
     where T: Iterator<Item=&'a u8>
 {
-    let (val, cnt) = it.take(len - 1)
+    let (val, cnt) = it.take(len)
                        .fold((0 as u64, 0),
                              |acc, val| (acc.0 << 8 | *val as u64,
                                          acc.1 + 1));
 
-    if cnt == len - 1 {
+    if cnt == len {
         match cnt {
             1 => Ok(SmlBinElement::U8(val as u8)),
             2 => Ok(SmlBinElement::U16(val as u16)),
             4 => Ok(SmlBinElement::U32(val as u32)),
             8 => Ok(SmlBinElement::U64(val as u64)),
-            _ => Err(SmlError::TLInvalidPrimLen(len))
+            _ => Err(SmlError::TLInvalidPrimLen(len + 1))
         }
     } else {
         Err(SmlError::UnexpectedEof)
@@ -271,12 +271,12 @@ fn parse_uint<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
 fn parse_bool<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
     where T: Iterator<Item=&'a u8>
 {
-    if len == 2 {
+    if len == 1 {
         let val = it.next().ok_or(SmlError::UnexpectedEof)?;
 
         Ok(SmlBinElement::Bool(*val > 0))
     } else {
-        Err(SmlError::TLInvalidPrimLen(len))
+        Err(SmlError::TLInvalidPrimLen(len + 1))
     }
 }
 
@@ -299,16 +299,16 @@ mod tests {
     #[test]
     fn t_tl_octet_str_simple() {
         assert_eq!(parse_tl(0x01, &mut [].iter()).unwrap(),
-                   (TL_OCTET_STR.0, 1));
+                   (TL_OCTET_STR.0, 0));
         assert_eq!(parse_tl(0x02, &mut [].iter()).unwrap(),
-                   (TL_OCTET_STR.0, 2));
+                   (TL_OCTET_STR.0, 1));
     }
 
     #[test]
     fn t_tl_octet_str_doesnt_consume() {
         let dont_touch = &mut [ 0x02 ].iter();
         assert_eq!(parse_tl(0x0f, dont_touch).unwrap(),
-                   (TL_OCTET_STR.0, 15));
+                   (TL_OCTET_STR.0, 14));
         assert_eq!(dont_touch.next(), Some(&0x02));
     }
 
@@ -316,7 +316,7 @@ mod tests {
     fn t_tl_octet_str_cont_single() {
         let cont_iter = &mut [ 0x02, 0xff ].iter();
         assert_eq!(parse_tl(0x8f, cont_iter).unwrap(),
-                   (TL_OCTET_STR.0, 0xf2));
+                   (TL_OCTET_STR.0, 0xf1));
         assert_eq!(cont_iter.next(), Some(&0xff));
     }
 
@@ -325,7 +325,7 @@ mod tests {
         let cont_iter = &mut [ 0x82, 0x83, 0x84, 0x85,
                                0x86, 0x87, 0x08, 0x11 ].iter();
         assert_eq!(parse_tl(0x81, cont_iter).unwrap(),
-                   (TL_OCTET_STR.0, 0x1234_5678));
+                   (TL_OCTET_STR.0, 0x1234_5677));
         assert_eq!(cont_iter.next(), Some(&0x11));
     }
 
@@ -333,7 +333,7 @@ mod tests {
     fn t_tl_octet_str_strange_len() {
         let cont_iter = &mut [ 0x02, 0xff ].iter();
         assert_eq!(parse_tl(0x80, cont_iter).unwrap(),
-                   (TL_OCTET_STR.0, 0x02));
+                   (TL_OCTET_STR.0, 0x01));
         assert_eq!(cont_iter.next(), Some(&0xff));
     }
 
@@ -346,7 +346,7 @@ mod tests {
     #[test]
     fn t_tl_bool() {
         assert_eq!(parse_tl(0x42, &mut [].iter()).unwrap(),
-                   (TL_BOOL.0, 2));
+                   (TL_BOOL.0, 1));
     }
 
     #[test]
@@ -360,34 +360,34 @@ mod tests {
     #[test]
     fn t_tl_bool_strange_len() {
         assert_eq!(parse_tl(0x80 | 0x40, &mut [ 0x02 ].iter()).unwrap(),
-                   (TL_BOOL.0, 2));
+                   (TL_BOOL.0, 1));
         assert_eq!(parse_tl(0x80 | 0x40,
                             &mut [ 0x80, 0x02 ].iter()).unwrap(),
-                   (TL_BOOL.0, 2));
+                   (TL_BOOL.0, 1));
     }
 
     #[test]
     fn t_tl_i8() {
         assert_eq!(parse_tl(0x52, &mut [].iter()).unwrap(),
-                   (TL_INT.0, 2));
+                   (TL_INT.0, 1));
     }
 
     #[test]
     fn t_tl_i16() {
         assert_eq!(parse_tl(0x53, &mut [].iter()).unwrap(),
-                   (TL_INT.0, 3));
+                   (TL_INT.0, 2));
     }
 
     #[test]
     fn t_tl_i32() {
         assert_eq!(parse_tl(0x55, &mut [].iter()).unwrap(),
-                   (TL_INT.0, 5));
+                   (TL_INT.0, 4));
     }
 
     #[test]
     fn t_tl_i64() {
         assert_eq!(parse_tl(0x59, &mut [].iter()).unwrap(),
-                   (TL_INT.0, 9));
+                   (TL_INT.0, 8));
     }
 
     #[test]
@@ -404,25 +404,25 @@ mod tests {
     #[test]
     fn t_tl_u8() {
         assert_eq!(parse_tl(0x62, &mut [].iter()).unwrap(),
-                   (TL_UINT.0, 2));
+                   (TL_UINT.0, 1));
     }
 
     #[test]
     fn t_tl_u16() {
         assert_eq!(parse_tl(0x63, &mut [].iter()).unwrap(),
-                   (TL_UINT.0, 3));
+                   (TL_UINT.0, 2));
     }
 
     #[test]
     fn t_tl_u32() {
         assert_eq!(parse_tl(0x65, &mut [].iter()).unwrap(),
-                   (TL_UINT.0, 5));
+                   (TL_UINT.0, 4));
     }
 
     #[test]
     fn t_tl_u64() {
         assert_eq!(parse_tl(0x69, &mut [].iter()).unwrap(),
-                   (TL_UINT.0, 9));
+                   (TL_UINT.0, 8));
     }
 
     #[test]
@@ -472,7 +472,7 @@ mod tests {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
-        assert_eq!(parse_octet_str(i, 9).unwrap(),
+        assert_eq!(parse_octet_str(i, 8).unwrap(),
                    SmlBinElement::OctetString(
                        [ 0x01, 0x02, 0x03, 0x4,
                          0xaa, 0xbb, 0xcc, 0x10 ].to_vec()));
@@ -484,7 +484,7 @@ mod tests {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
-        assert_eq!(parse_octet_str(i, 1).unwrap(),
+        assert_eq!(parse_octet_str(i, 0).unwrap(),
                    SmlBinElement::OctetString([ ].to_vec()));
         assert_eq!(*i.next().unwrap(), 0x01);
     }
@@ -494,15 +494,7 @@ mod tests {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
-        assert_eq!(parse_octet_str(i, 11), Err(SmlError::UnexpectedEof));
-    }
-
-    #[test]
-    fn t_tl_parse_octet_str_invalid_len() {
-        let i = &mut [ 0x01, 0x02, 0x03, 0x4,
-                       0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
-
-        assert_eq!(parse_octet_str(i, 0), Err(SmlError::TLInvalidLen));
+        assert_eq!(parse_octet_str(i, 10), Err(SmlError::UnexpectedEof));
     }
 
     #[test]
@@ -510,7 +502,7 @@ mod tests {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
-        assert_eq!(parse_int(i, 2).unwrap(),
+        assert_eq!(parse_int(i, 1).unwrap(),
                    SmlBinElement::I8(0x01));
         assert_eq!(*i.next().unwrap(), 0x02);
     }
@@ -520,7 +512,7 @@ mod tests {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
-        assert_eq!(parse_int(i, 3).unwrap(),
+        assert_eq!(parse_int(i, 2).unwrap(),
                    SmlBinElement::I16(0x0102));
         assert_eq!(*i.next().unwrap(), 0x03);
     }
@@ -530,7 +522,7 @@ mod tests {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
-        assert_eq!(parse_int(i, 5).unwrap(),
+        assert_eq!(parse_int(i, 4).unwrap(),
                    SmlBinElement::I32(0x01020304));
         assert_eq!(*i.next().unwrap(), 0x0aa);
     }
@@ -540,7 +532,7 @@ mod tests {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
-        assert_eq!(parse_int(i, 9).unwrap(),
+        assert_eq!(parse_int(i, 8).unwrap(),
                    SmlBinElement::I64(0x01020304_aabbcc10));
         assert_eq!(*i.next().unwrap(), 0xff);
     }
@@ -550,17 +542,17 @@ mod tests {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
-        assert_eq!(parse_int(i, 1), Err(SmlError::TLInvalidPrimLen(1)));
-        assert_eq!(parse_int(i, 0), Err(SmlError::TLInvalidPrimLen(0)));
-        assert_eq!(parse_int(i, 4), Err(SmlError::TLInvalidPrimLen(4)));
+        assert_eq!(parse_int(i, 3), Err(SmlError::TLInvalidPrimLen(4)));
+        assert_eq!(parse_int(i, 0), Err(SmlError::TLInvalidPrimLen(1)));
+        assert_eq!(parse_int(i, 5), Err(SmlError::TLInvalidPrimLen(6)));
     }
 
 
     #[test]
-    fn t_tl_parse_int_invalid_short() {
+    fn t_tl_parse_int_short() {
         let i = &mut [ 0x01, 0x02, 0x03, 0x4,
                        0xaa, 0xbb, 0xcc ].iter();
 
-        assert_eq!(parse_int(i, 9), Err(SmlError::UnexpectedEof));
+        assert_eq!(parse_int(i, 8), Err(SmlError::UnexpectedEof));
     }
 }
