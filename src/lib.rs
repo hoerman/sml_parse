@@ -7,12 +7,7 @@ const TL_UINT: (u8, u8) = (0x60, 0x70);
 const TL_LIST: (u8, u8) = (0x70, 0x70);
 
 pub struct SmlBinFile {
-    messages: Vec<SmlBinList>,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct SmlBinList {
-    list: Vec<SmlBinElement>
+    messages: Vec<SmlBinElement>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -27,7 +22,7 @@ pub enum SmlBinElement {
     U32(u32),
     U64(u64),
     Bool(bool),
-    List(SmlBinList),
+    List(Vec<SmlBinElement>),
     EndOfMsg,
 }    
 
@@ -95,7 +90,7 @@ pub fn parse_buf_to_smlbinfile(buf: &[u8]) -> SmlBinFile
     SmlBinFile { messages: msgs }
 }
 
-fn parse_into_binlist<'a, T>(buf: T) -> Vec<SmlBinList>
+fn parse_into_binlist<'a, T>(buf: T) -> Vec<SmlBinElement>
     where T: IntoIterator<Item=&'a u8>
 {
     let _el = sml_bin_el_from_iter(&mut buf.into_iter());
@@ -289,7 +284,7 @@ fn parse_list<'a, T>(it: &mut T, len: usize) -> Result<SmlBinElement>
         list_elements.push(sml_bin_el_from_iter(it)?);
     }
 
-    Ok(SmlBinElement::List(SmlBinList { list: list_elements }))
+    Ok(SmlBinElement::List(list_elements))
 }
 
 #[cfg(test)]
@@ -645,3 +640,4 @@ mod tests {
         assert_eq!(parse_bool(i, 1), Err(SmlError::UnexpectedEof));
     }
 }
+
