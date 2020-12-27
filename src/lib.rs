@@ -109,7 +109,7 @@ fn sml_bin_el_from_iter<'a, T>(i: &mut T) -> Result<SmlBinElement>
         (t, len) if t == TL_UINT.0 => parse_uint(i, len),
         (t, len) if t == TL_BOOL.0 => parse_bool(i, len),
         (t, len) if t == TL_LIST.0 => parse_list(i, len),
-        (_, _) => Ok(SmlBinElement::EndOfMsg)
+        (_, _) => Err(SmlError::TLUnknownType)
     }
 }
 
@@ -613,14 +613,18 @@ mod tests {
         let i = &mut [ 0x01, 0x02, 0x03, 0x00,
                        0xaa, 0xbb, 0xcc, 0x10, 0xff ].iter();
 
-        assert_eq!(parse_bool(i, 1).unwrap(),
-                   SmlBinElement::Bool(true));
+        assert_eq!(parse_bool(i, 1).unwrap(), SmlBinElement::Bool(true));
         assert_eq!(*i.next().unwrap(), 0x02);
 
-        assert_eq!(parse_bool(i, 1).unwrap(),
-                   SmlBinElement::Bool(true));
-        assert_eq!(parse_bool(i, 1).unwrap(),
-                   SmlBinElement::Bool(false));
+        assert_eq!(parse_bool(i, 1).unwrap(), SmlBinElement::Bool(true));
+        assert_eq!(parse_bool(i, 1).unwrap(), SmlBinElement::Bool(false));
+    }
+
+    #[test]
+    fn t_parse_bool_large_true() {
+        let i = &mut [ 0xf0 ].iter();
+
+        assert_eq!(parse_bool(i, 1).unwrap(), SmlBinElement::Bool(true));
     }
 
     #[test]
@@ -708,6 +712,65 @@ mod tests {
         ref_list.push(SmlBinElement::OctetString([ 0x11, 0x22, 0x33 ].to_vec()));
 
         assert_eq!(list, Ok(SmlBinElement::List(ref_list)));
+    }
+
+    #[test]
+    fn t_sml_bin_el_from_iter_octet_str()
+    {
+        let i = &mut [ 0x05, 0x01, 0x02, 0x30, 0x40, 0x00 ].iter();
+
+        assert_eq!(sml_bin_el_from_iter(i).unwrap(),
+                   SmlBinElement::OctetString([ 0x01, 0x02, 0x30, 0x40 ].to_vec()));
+        assert_eq!(*i.next().unwrap(), 0x00);
+    }
+
+    #[test]
+    fn t_sml_bin_el_from_iter_bool()
+    {
+        let i = &mut [ 0x42, 0x01, 0x00 ].iter();
+
+        assert_eq!(sml_bin_el_from_iter(i).unwrap(), SmlBinElement::Bool(true));
+        assert_eq!(*i.next().unwrap(), 0x00);
+    }
+
+    #[test]
+    fn t_sml_bin_el_from_iter_int()
+    {
+        let i = &mut [ 0x52, 0x01, 0x53, 0x11, 0x22, 0x55, 0x7a, 0xbb, 0xcc, 0xdd,
+                       0x59, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 ].iter();
+
+        assert_eq!(sml_bin_el_from_iter(i).unwrap(), SmlBinElement::I8(1));
+        assert_eq!(sml_bin_el_from_iter(i).unwrap(), SmlBinElement::I16(0x1122));
+        assert_eq!(sml_bin_el_from_iter(i).unwrap(), SmlBinElement::I32(0x7abb_ccdd));
+        assert_eq!(sml_bin_el_from_iter(i).unwrap(), SmlBinElement::I64(i64::MIN + 1));
+        assert_eq!(*i.next().unwrap(), 0x00);
+    }
+
+    #[test]
+    fn t_sml_bin_el_from_iter_uint()
+    {
+        let i = &mut [ 0x62, 0x01, 0x63, 0x11, 0x22, 0x65, 0x7a, 0xbb, 0xcc, 0xdd,
+                       0x69, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00 ].iter();
+
+        assert_eq!(sml_bin_el_from_iter(i).unwrap(), SmlBinElement::U8(1));
+        assert_eq!(sml_bin_el_from_iter(i).unwrap(), SmlBinElement::U16(0x1122));
+        assert_eq!(sml_bin_el_from_iter(i).unwrap(), SmlBinElement::U32(0x7abb_ccdd));
+        assert_eq!(sml_bin_el_from_iter(i).unwrap(), SmlBinElement::U64(u64::MAX / 2 + 2));
+        assert_eq!(*i.next().unwrap(), 0x00);
+    }
+
+    #[test]
+    fn t_sml_bin_el_from_iter_list()
+    {
+        let i = &mut [ 0x72, 0x42, 0x00, 0x53, 0x00, 0x01, 0x00 ].iter();
+
+        let mut list = Vec::new();
+        list.push(SmlBinElement::Bool(false));
+        list.push(SmlBinElement::I16(1));
+
+        assert_eq!(sml_bin_el_from_iter(i).unwrap(),
+                   SmlBinElement::List(list));
+        assert_eq!(*i.next().unwrap(), 0x00);
     }
 }
 
