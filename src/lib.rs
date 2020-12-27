@@ -772,5 +772,21 @@ mod tests {
                    SmlBinElement::List(list));
         assert_eq!(*i.next().unwrap(), 0x00);
     }
+
+    #[test]
+    fn t_sml_bin_el_from_iter_unknown_type()
+    {
+        let i = &mut [ 0x10, 0x00, 0x00, 0x00 ].iter();
+
+        assert_eq!(sml_bin_el_from_iter(i), Err(SmlError::TLUnknownType));
+    }
+
+    #[test]
+    fn t_sml_bin_el_from_iter_unknown_type_in_list()
+    {
+        let i = &mut [ 0x72, 0x10, 0x42, 0x00, 0x00 ].iter();
+
+        assert_eq!(sml_bin_el_from_iter(i), Err(SmlError::TLUnknownType));
+    }
 }
 
