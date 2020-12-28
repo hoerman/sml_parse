@@ -83,26 +83,46 @@ pub type Result<T> = std::result::Result<T, SmlError>;
  */
 type SmlTL = (u8, usize);
 
-pub fn parse_buf_to_smlbinfile(buf: &[u8]) -> SmlBinFile
+pub fn parse_buf_to_smlbinfile(buf: &[u8]) -> Result<SmlBinFile>
 {
-    let msgs = parse_into_binlist(buf);
+    let msgs = parse_into_binlist(buf)?;
     
-    SmlBinFile { messages: msgs }
+    Ok(SmlBinFile { messages: msgs })
 }
 
-fn parse_into_binlist<'a, T>(buf: T) -> Vec<SmlBinElement>
+fn parse_into_binlist<'a, T>(buf: T) -> Result<Vec<SmlBinElement>>
     where T: IntoIterator<Item=&'a u8>
 {
-    let _el = sml_bin_el_from_iter(&mut buf.into_iter());
+    let mut list = Vec::new();
+    let i = &mut buf.into_iter();
 
-    Vec::new()
+    while let Some(el) = sml_try_msg_from_iter(i)? {
+        list.push(el);
+    }
+
+    Ok(list)
 }
 
-fn sml_bin_el_from_iter<'a, T>(i: &mut T) -> Result<SmlBinElement>
+fn sml_try_msg_from_iter<'a, T>(i: &mut T)
+    -> Result<Option<SmlBinElement>>
     where T: Iterator<Item=&'a u8>
 {
-    let tl = sml_tl_from_iter(i)?;
+    match sml_tl_from_iter(i) {
+        Ok(tl) => {
+            match sml_bin_el_from_iter_with_tl(i, tl) {
+                Ok(el) => Ok(Some(el)),
+                Err(err) => Err(err),
+            }
+        },
+        Err(SmlError::UnexpectedEof) => Ok(None),
+        Err(err) => Err(err),
+    }
+}
 
+fn sml_bin_el_from_iter_with_tl<'a, T>(i: &mut T, tl: SmlTL)
+    -> Result<SmlBinElement>
+    where T: Iterator<Item=&'a u8>
+{
     match tl {
         (t, len) if t == TL_OCTET_STR.0 => parse_octet_str(i, len),
         (t, len) if t == TL_INT.0 => parse_int(i, len),
@@ -111,6 +131,14 @@ fn sml_bin_el_from_iter<'a, T>(i: &mut T) -> Result<SmlBinElement>
         (t, len) if t == TL_LIST.0 => parse_list(i, len),
         (_, _) => Err(SmlError::TLUnknownType)
     }
+}
+
+fn sml_bin_el_from_iter<'a, T>(i: &mut T) -> Result<SmlBinElement>
+    where T: Iterator<Item=&'a u8>
+{
+    let tl = sml_tl_from_iter(i)?;
+
+    sml_bin_el_from_iter_with_tl(i, tl)
 }
 
 fn sml_tl_from_iter<'a, T>(i: &mut T) -> Result<SmlTL>
@@ -787,6 +815,41 @@ mod tests {
         let i = &mut [ 0x72, 0x10, 0x42, 0x00, 0x00 ].iter();
 
         assert_eq!(sml_bin_el_from_iter(i), Err(SmlError::TLUnknownType));
+    }
+
+    #[test]
+    fn t_parse_into_binlist() {
+        let buf = [ 0x72, 0x42, 0x00, 0x53, 0x00, 0x01 ];
+
+        let mut list = Vec::new();
+        list.push(SmlBinElement::Bool(false));
+        list.push(SmlBinElement::I16(1));
+
+        let mut msgs = Vec::new();
+        msgs.push(SmlBinElement::List(list));
+
+        assert_eq!(parse_into_binlist(&buf).unwrap(), msgs);
+    }
+
+    #[test]
+    fn t_parse_into_binlist_empty() {
+        let buf = [ ];
+
+        assert_eq!(parse_into_binlist(&buf).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn t_parse_into_binlist_invalid_el() {
+        let buf = [ 0x72, 0x42, 0x00, 0x53, 0x00, 0x01, 0x00 ];
+
+        assert_eq!(parse_into_binlist(&buf), Err(SmlError::TLInvalidLen));
+    }
+
+    #[test]
+    fn t_parse_into_binlist_short() {
+        let buf = [ 0x72, 0x42, 0x00, 0x53, 0x00, ];
+
+        assert_eq!(parse_into_binlist(&buf), Err(SmlError::UnexpectedEof));
     }
 }
 
