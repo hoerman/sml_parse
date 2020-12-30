@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+const TL_ENDOFMSG: (u8, u8) = (0x00, 0xff);
 const TL_OCTET_STR: (u8, u8) = (0x00, 0x70);
 const TL_BOOL: (u8, u8) = (0x40, 0x70);
 const TL_INT: (u8, u8) = (0x50, 0x70);
@@ -124,10 +125,12 @@ fn sml_bin_el_from_iter_with_tl<'a, T>(i: &mut T, tl: SmlTL)
     where T: Iterator<Item=&'a u8>
 {
     match tl {
-        (t, len) if t == TL_OCTET_STR.0 => parse_octet_str(i, len),
-        (t, len) if t == TL_INT.0 => parse_int(i, len),
-        (t, len) if t == TL_UINT.0 => parse_uint(i, len),
-        (t, len) if t == TL_BOOL.0 => parse_bool(i, len),
+        (t, len) if t == TL_ENDOFMSG.0 && len == 0 =>
+            Ok(SmlBinElement::EndOfMsg),
+        (t, len) if t == TL_OCTET_STR.0 => parse_octet_str(i, len - 1),
+        (t, len) if t == TL_INT.0 => parse_int(i, len - 1),
+        (t, len) if t == TL_UINT.0 => parse_uint(i, len - 1),
+        (t, len) if t == TL_BOOL.0 => parse_bool(i, len - 1),
         (t, len) if t == TL_LIST.0 => parse_list(i, len),
         (_, _) => Err(SmlError::TLUnknownType)
     }
@@ -167,32 +170,34 @@ fn sml_tl_from_iter<'a, T>(i: &mut T) -> Result<SmlTL>
 fn parse_tl<'a, T>(tl: u8, i: &mut T) -> Result<SmlTL>
     where T: Iterator<Item=&'a u8>
 {
-    if tl & TL_OCTET_STR.1 == TL_OCTET_STR.0 {
+    if tl & TL_ENDOFMSG.1 == TL_ENDOFMSG.0 {
+        Ok((TL_ENDOFMSG.0, 0))
+    } else if tl & TL_OCTET_STR.1 == TL_OCTET_STR.0 {
         let size = parse_tl_len(tl, i)?;
 
         match size {
             0 => Err(SmlError::TLInvalidLen),
-            _ => Ok((TL_OCTET_STR.0, size - 1)),
+            _ => Ok((TL_OCTET_STR.0, size)),
         }
     } else if tl & TL_BOOL.1 == TL_BOOL.0 {
         let size = parse_tl_len(tl, i)?;
 
         match size {
-            2 => Ok((TL_BOOL.0, size - 1)),
+            2 => Ok((TL_BOOL.0, size)),
             l => Err(SmlError::TLInvalidPrimLen(l)),
         }
     } else if tl & TL_INT.1 == TL_INT.0 {
         let size = parse_tl_len(tl, i)?;
 
         match size {
-            2 | 3 | 5 | 9 => Ok((TL_INT.0, size - 1)),
+            2 | 3 | 5 | 9 => Ok((TL_INT.0, size)),
             l => Err(SmlError::TLInvalidPrimLen(l)),
         }
     } else if tl & TL_UINT.1 == TL_UINT.0 {
         let size = parse_tl_len(tl, i)?;
 
         match size {
-            2 | 3 | 5 | 9 => Ok((TL_UINT.0, size - 1)),
+            2 | 3 | 5 | 9 => Ok((TL_UINT.0, size)),
             l => Err(SmlError::TLInvalidPrimLen(l)),
         }
     } else if tl & TL_LIST.1 == TL_LIST.0 {
@@ -322,16 +327,16 @@ mod tests {
     #[test]
     fn t_tl_octet_str_simple() {
         assert_eq!(parse_tl(0x01, &mut [].iter()).unwrap(),
-                   (TL_OCTET_STR.0, 0));
-        assert_eq!(parse_tl(0x02, &mut [].iter()).unwrap(),
                    (TL_OCTET_STR.0, 1));
+        assert_eq!(parse_tl(0x02, &mut [].iter()).unwrap(),
+                   (TL_OCTET_STR.0, 2));
     }
 
     #[test]
     fn t_tl_octet_str_doesnt_consume() {
         let dont_touch = &mut [ 0x02 ].iter();
         assert_eq!(parse_tl(0x0f, dont_touch).unwrap(),
-                   (TL_OCTET_STR.0, 14));
+                   (TL_OCTET_STR.0, 15));
         assert_eq!(dont_touch.next(), Some(&0x02));
     }
 
@@ -339,7 +344,7 @@ mod tests {
     fn t_tl_octet_str_cont_single() {
         let cont_iter = &mut [ 0x02, 0xff ].iter();
         assert_eq!(parse_tl(0x8f, cont_iter).unwrap(),
-                   (TL_OCTET_STR.0, 0xf1));
+                   (TL_OCTET_STR.0, 0xf2));
         assert_eq!(cont_iter.next(), Some(&0xff));
     }
 
@@ -348,7 +353,7 @@ mod tests {
         let cont_iter = &mut [ 0x82, 0x83, 0x84, 0x85,
                                0x86, 0x87, 0x08, 0x11 ].iter();
         assert_eq!(parse_tl(0x81, cont_iter).unwrap(),
-                   (TL_OCTET_STR.0, 0x1234_5677));
+                   (TL_OCTET_STR.0, 0x1234_5678));
         assert_eq!(cont_iter.next(), Some(&0x11));
     }
 
@@ -356,20 +361,20 @@ mod tests {
     fn t_tl_octet_str_strange_len() {
         let cont_iter = &mut [ 0x02, 0xff ].iter();
         assert_eq!(parse_tl(0x80, cont_iter).unwrap(),
-                   (TL_OCTET_STR.0, 0x01));
+                   (TL_OCTET_STR.0, 0x02));
         assert_eq!(cont_iter.next(), Some(&0xff));
     }
 
     #[test]
     fn t_tl_octet_str_wrong_len() {
-        assert_eq!(parse_tl(0x00, &mut [].iter()),
+        assert_eq!(parse_tl(0x81, &mut [ 0x81, 0x51 ].iter()),
                    Err(SmlError::TLInvalidLen));
     }
 
     #[test]
     fn t_tl_bool() {
         assert_eq!(parse_tl(0x42, &mut [].iter()).unwrap(),
-                   (TL_BOOL.0, 1));
+                   (TL_BOOL.0, 2));
     }
 
     #[test]
@@ -383,34 +388,34 @@ mod tests {
     #[test]
     fn t_tl_bool_strange_len() {
         assert_eq!(parse_tl(0x80 | 0x40, &mut [ 0x02 ].iter()).unwrap(),
-                   (TL_BOOL.0, 1));
+                   (TL_BOOL.0, 2));
         assert_eq!(parse_tl(0x80 | 0x40,
                             &mut [ 0x80, 0x02 ].iter()).unwrap(),
-                   (TL_BOOL.0, 1));
+                   (TL_BOOL.0, 2));
     }
 
     #[test]
     fn t_tl_i8() {
         assert_eq!(parse_tl(0x52, &mut [].iter()).unwrap(),
-                   (TL_INT.0, 1));
+                   (TL_INT.0, 2));
     }
 
     #[test]
     fn t_tl_i16() {
         assert_eq!(parse_tl(0x53, &mut [].iter()).unwrap(),
-                   (TL_INT.0, 2));
+                   (TL_INT.0, 3));
     }
 
     #[test]
     fn t_tl_i32() {
         assert_eq!(parse_tl(0x55, &mut [].iter()).unwrap(),
-                   (TL_INT.0, 4));
+                   (TL_INT.0, 5));
     }
 
     #[test]
     fn t_tl_i64() {
         assert_eq!(parse_tl(0x59, &mut [].iter()).unwrap(),
-                   (TL_INT.0, 8));
+                   (TL_INT.0, 9));
     }
 
     #[test]
@@ -427,25 +432,25 @@ mod tests {
     #[test]
     fn t_tl_u8() {
         assert_eq!(parse_tl(0x62, &mut [].iter()).unwrap(),
-                   (TL_UINT.0, 1));
+                   (TL_UINT.0, 2));
     }
 
     #[test]
     fn t_tl_u16() {
         assert_eq!(parse_tl(0x63, &mut [].iter()).unwrap(),
-                   (TL_UINT.0, 2));
+                   (TL_UINT.0, 3));
     }
 
     #[test]
     fn t_tl_u32() {
         assert_eq!(parse_tl(0x65, &mut [].iter()).unwrap(),
-                   (TL_UINT.0, 4));
+                   (TL_UINT.0, 5));
     }
 
     #[test]
     fn t_tl_u64() {
         assert_eq!(parse_tl(0x69, &mut [].iter()).unwrap(),
-                   (TL_UINT.0, 8));
+                   (TL_UINT.0, 9));
     }
 
     #[test]
@@ -840,7 +845,7 @@ mod tests {
 
     #[test]
     fn t_parse_into_binlist_invalid_el() {
-        let buf = [ 0x72, 0x42, 0x00, 0x53, 0x00, 0x01, 0x00 ];
+        let buf = [ 0x72, 0x42, 0x00, 0x53, 0x00, 0x01, 0x80 | 0x50, 0x50 ];
 
         assert_eq!(parse_into_binlist(&buf), Err(SmlError::TLInvalidLen));
     }
@@ -850,6 +855,48 @@ mod tests {
         let buf = [ 0x72, 0x42, 0x00, 0x53, 0x00, ];
 
         assert_eq!(parse_into_binlist(&buf), Err(SmlError::UnexpectedEof));
+    }
+
+    #[test]
+    fn t_parse_into_binlist_complex() {
+        let buf = [ 0x76, 0x05, 0x15, 0x17, 0x15, 0x56, 0x62, 0x00, 0x62, 0x00,
+                    0x72, 0x63, 0x01, 0x01, 0x76, 0x01, 0x01, 0x05, 0x17, 0x52,
+                    0xac, 0xed, 0x0b, 0x0c, 0x31, 0x59, 0x54, 0x4d, 0x00, 0x13,
+                    0xd1, 0xb0, 0x1f, 0x01, 0x01, 0x63, 0xe8, 0x0b, 0x00 ];
+
+        let mut base_list = Vec::new();
+        base_list.push(SmlBinElement::OctetString(
+                           [ 0x15, 0x17, 0x15, 0x56 ].to_vec())
+                      );
+        base_list.push(SmlBinElement::U8(0));
+        base_list.push(SmlBinElement::U8(0));
+
+        let mut inner1 = Vec::new();
+        inner1.push(SmlBinElement::U16(0x0101));
+
+        let mut inner11 = Vec::new();
+        inner11.push(SmlBinElement::OctetString([].to_vec()));
+        inner11.push(SmlBinElement::OctetString([].to_vec()));
+        inner11.push(SmlBinElement::OctetString(
+                         [ 0x17, 0x52, 0xac, 0xed ].to_vec())
+                    );
+        inner11.push(SmlBinElement::OctetString(
+                         [ 0x0c, 0x31, 0x59, 0x54, 0x4d,
+                           0x00, 0x13, 0xd1, 0xb0, 0x1f ].to_vec())
+                    );
+        inner11.push(SmlBinElement::OctetString([].to_vec()));
+        inner11.push(SmlBinElement::OctetString([].to_vec()));
+
+        inner1.push(SmlBinElement::List(inner11));
+        base_list.push(SmlBinElement::List(inner1));
+
+        base_list.push(SmlBinElement::U16(0xe80b));
+        base_list.push(SmlBinElement::EndOfMsg);
+
+        let mut res_list = Vec::new();
+        res_list.push(SmlBinElement::List(base_list));
+
+        assert_eq!(parse_into_binlist(&buf).unwrap(), res_list);
     }
 }
 
