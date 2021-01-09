@@ -86,7 +86,7 @@ pub enum SmlError {
 
 pub type Result<T> = std::result::Result<T, SmlError>;
 
-struct SmlPreParse<'a, T: Iterator<Item=&'a u8>> {
+struct SmlPreParse<'a, T: Iterator<Item=u8>> {
     data_iter: &'a mut T,
     escape_buf: u64,
     iter_val: u8,
@@ -101,7 +101,7 @@ type SmlTL = (u8, usize);
 
 pub fn parse_iter_into_smlbinfile<'a, T>(i: &'a mut T)
     -> Result<Option<SmlBinFile>>
-    where T: Iterator<Item=&'a u8>
+    where T: Iterator<Item=u8>
 {
     let mut pre_parse = SmlPreParse::new(i);
 
@@ -117,7 +117,7 @@ pub fn parse_iter_into_smlbinfile<'a, T>(i: &'a mut T)
 }
 
 impl<'a, T> SmlPreParse<'a, T>
-    where T: Iterator<Item=&'a u8>
+    where T: Iterator<Item=u8>
 {
     fn new(iter: &'a mut T) -> SmlPreParse<T>
     {
@@ -128,7 +128,7 @@ impl<'a, T> SmlPreParse<'a, T>
     fn sml_search_start_escape(&mut self) -> bool
     {
         for c in &mut self.data_iter {
-            self.escape_buf = self.escape_buf << 8 | *c as u64;
+            self.escape_buf = self.escape_buf << 8 | c as u64;
 
             if self.escape_buf == SML_ESCAPE_SEQ.0 | SML_START_SEQ {
                 return true;
@@ -143,7 +143,7 @@ impl<'a, T> SmlPreParse<'a, T>
         let buf = &mut self.escape_buf;
 
         let cnt = self.data_iter.take(8).fold(0 as usize, |acc, c| {
-            *buf = *buf << 8 | *c as u64;
+            *buf = *buf << 8 | c as u64;
             acc + 1
         });
 
@@ -162,7 +162,7 @@ impl<'a, T> SmlPreParse<'a, T>
 
             match self.data_iter.next() {
                 Some(val) => { self.escape_buf = self.escape_buf << 8 |
-                               *val as u64;
+                               val as u64;
                                Some(iter_val) },
                 None => { self.error = SmlError::UnexpectedEof; None }
             }
@@ -183,7 +183,7 @@ impl<'a, T> SmlPreParse<'a, T>
 
         match self.data_iter.next() {
             Some(val) => { self.escape_buf = self.escape_buf << 8 |
-                           *val as u64;
+                           val as u64;
                            Some(iter_val) },
             None => { self.error = SmlError::UnexpectedEof; None }
         }
@@ -191,7 +191,7 @@ impl<'a, T> SmlPreParse<'a, T>
 }
 
 impl<'a, T> Iterator for SmlPreParse<'a, T>
-    where T: Iterator<Item=&'a u8>
+    where T: Iterator<Item=u8>
 {
     type Item = u8;
 
@@ -1024,3 +1024,57 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+mod tests_preparse {
+    use super::*;
+
+    #[test]
+    fn t_smlpreparse_build()
+    {
+        let _preparse = SmlPreParse::new(&mut vec![].into_iter());
+
+        assert!(true)
+    }
+
+    #[test]
+    fn t_search_start_escape()
+    {
+        let mut i = vec![0x1b, 0x1b, 0x1b, 0x1b,
+                         0x01, 0x01, 0x01, 0x01, 0x00].into_iter();
+
+        let mut pp = SmlPreParse::new(&mut i);
+
+        assert_eq!(pp.sml_search_start_escape(), true);
+        assert_eq!(i.next().unwrap(), 0x00);
+    }
+
+    #[test]
+    fn t_search_start_escape_no_start_escape()
+    {
+        let mut i = vec![0x1b, 0x1b, 0x1b, 0x1b,
+                         0x01, 0x01, 0x01, 0x00].into_iter();
+
+        let mut pp = SmlPreParse::new(&mut i);
+
+        assert_eq!(pp.sml_search_start_escape(), false);
+    }
+
+    #[test]
+    fn t_search_start_escape_leading_garbage()
+    {
+        let mut i = vec![0x1b, 0x1b, 0x1b, 0x1b,
+                         0x01, 0x01, 0x01, 0x00,
+                         0xff, 0x31, 0xa2, 0x55,
+                         0x1b, 0x1b, 0x1b, 0x1b,
+                         0x01, 0x01, 0x01, 0x01,
+                         0x01, 0x02, 0x03, 0x04 ].into_iter();
+
+        let mut pp = SmlPreParse::new(&mut i);
+
+        assert_eq!(pp.sml_search_start_escape(), true);
+        assert_eq!(i.next().unwrap(), 0x01);
+        assert_eq!(i.next().unwrap(), 0x02);
+        assert_eq!(i.next().unwrap(), 0x03);
+        assert_eq!(i.next().unwrap(), 0x04);
+    }
+}
