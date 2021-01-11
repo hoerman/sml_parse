@@ -288,32 +288,32 @@ fn parse_tl<T>(tl: u8, i: &mut T) -> Result<SmlTL>
     if tl & TL_ENDOFMSG.1 == TL_ENDOFMSG.0 {
         Ok((TL_ENDOFMSG.0, 0, 0))
     } else if tl & TL_OCTET_STR.1 == TL_OCTET_STR.0 {
-        let (size_total, size_net) = parse_tl_len(tl, i, false)?;
+        let (size_total, size_net) = parse_tl_len_total(tl, i)?;
 
         Ok((TL_OCTET_STR.0, size_total, size_net))
     } else if tl & TL_BOOL.1 == TL_BOOL.0 {
-        let (size_total, size_net) = parse_tl_len(tl, i, false)?;
+        let (size_total, size_net) = parse_tl_len_total(tl, i)?;
 
         match size_net {
             1 => Ok((TL_BOOL.0, size_total, size_net)),
             _ => Err(SmlError::TLInvalidPrimLen(size_total)),
         }
     } else if tl & TL_INT.1 == TL_INT.0 {
-        let (size_total, size_net) = parse_tl_len(tl, i, false)?;
+        let (size_total, size_net) = parse_tl_len_total(tl, i)?;
 
         match size_net {
             1 | 2 | 4 | 8 => Ok((TL_INT.0, size_total, size_net)),
             _ => Err(SmlError::TLInvalidPrimLen(size_total)),
         }
     } else if tl & TL_UINT.1 == TL_UINT.0 {
-        let (size_total, size_net) = parse_tl_len(tl, i, false)?;
+        let (size_total, size_net) = parse_tl_len_total(tl, i)?;
 
         match size_net {
             1 | 2 | 4 | 8 => Ok((TL_UINT.0, size_total, size_net)),
             _ => Err(SmlError::TLInvalidPrimLen(size_total)),
         }
     } else if tl & TL_LIST.1 == TL_LIST.0 {
-        let (size_total, size_net) = parse_tl_len(tl, i, true)?;
+        let (size_total, size_net) = parse_tl_len_net(tl, i)?;
 
         Ok((TL_LIST.0, size_total, size_net))
     } else {
@@ -321,24 +321,40 @@ fn parse_tl<T>(tl: u8, i: &mut T) -> Result<SmlTL>
     }
 }
 
-fn parse_tl_len<T>(tl: u8, i: &mut T, as_net: bool) -> Result<(usize, usize)>
+fn parse_tl_len_total<T>(tl: u8, i: &mut T) -> Result<(usize, usize)>
     where T: Iterator<Item=u8>
 {
-    let size = tl as usize & 0x0f;
+    let (total_size, head_size) = parse_tl_len(tl, i)?;
 
-    if tl & 0x80 == 0x80 {
-        parse_tl_len_cont(size, i, as_net, 4)
-    } else if as_net {
-        Ok((size, size))
-    } else if size >= 1 {
-        Ok((size, size - 1))
+    if total_size >= head_size {
+        Ok((total_size, total_size - head_size))
     } else {
         Err(SmlError::TLInvalidLen)
     }
 }
 
-fn parse_tl_len_cont< T>(size: usize, i: &mut T, as_net: bool,
-                         size_bits: usize) -> Result<(usize, usize)>
+fn parse_tl_len_net<T>(tl: u8, i: &mut T) -> Result<(usize, usize)>
+    where T: Iterator<Item=u8>
+{
+    let (net_size, _) = parse_tl_len(tl, i)?;
+
+    Ok((net_size, net_size))
+}
+
+fn parse_tl_len<T>(tl: u8, i: &mut T) -> Result<(usize, usize)>
+    where T: Iterator<Item=u8>
+{
+    let size = tl as usize & 0x0f;
+
+    if tl & 0x80 == 0x80 {
+        parse_tl_len_cont(size, i, 4)
+    } else {
+        Ok((size, 1))
+    }
+}
+
+fn parse_tl_len_cont<T>(size: usize, i: &mut T,
+                        size_bits: usize) -> Result<(usize, usize)>
     where T: Iterator<Item=u8>
 {
     let ld = i.next().ok_or(SmlError::UnexpectedEof)?;
@@ -349,16 +365,13 @@ fn parse_tl_len_cont< T>(size: usize, i: &mut T, as_net: bool,
         Err(SmlError::TLLenOutOfBounds)
     } else {
         let new_size = (size << 4) | (ld as usize & 0x0f);
-        let head_size = size_bits / 4 + 1;
 
         if ld & 0x80 == 0x80 {
-            parse_tl_len_cont(new_size, i, as_net, size_bits + 4)
-        } else if as_net {
-            Ok((new_size, new_size))
-        } else if new_size >= head_size {
-            Ok((new_size, new_size - head_size))
+            parse_tl_len_cont(new_size, i, size_bits + 4)
         } else {
-            Err(SmlError::TLInvalidLen)
+            let head_size = size_bits / 4 + 1;
+
+            Ok((new_size, head_size))
         }
     }
 }
