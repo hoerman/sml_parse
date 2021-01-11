@@ -97,7 +97,7 @@ struct SmlPreParse<'a, T: Iterator<Item=u8>> {
  * integer code of the data type, the second element gives the decoded
  * size.
  */
-type SmlTL = (u8, usize);
+type SmlTL = (u8, usize, usize);
 
 pub fn parse_iter_into_smlbinfile<'a, T>(i: &'a mut T)
     -> Result<Option<SmlBinFile>>
@@ -240,14 +240,14 @@ fn sml_bin_el_from_iter_with_tl<T>(i: &mut T, tl: SmlTL)
     where T: Iterator<Item=u8>
 {
     match tl {
-        (t, len) if t == TL_ENDOFMSG.0 && len == 0 =>
+        (t, len_total, _) if t == TL_ENDOFMSG.0 && len_total == 0 =>
             Ok(SmlBinElement::EndOfMsg),
-        (t, len) if t == TL_OCTET_STR.0 => parse_octet_str(i, len - 1),
-        (t, len) if t == TL_INT.0 => parse_int(i, len - 1),
-        (t, len) if t == TL_UINT.0 => parse_uint(i, len - 1),
-        (t, len) if t == TL_BOOL.0 => parse_bool(i, len - 1),
-        (t, len) if t == TL_LIST.0 => parse_list(i, len),
-        (_, _) => Err(SmlError::TLUnknownType)
+        (t, _, len_net) if t == TL_OCTET_STR.0 => parse_octet_str(i, len_net),
+        (t, _, len_net) if t == TL_INT.0 => parse_int(i, len_net),
+        (t, _, len_net) if t == TL_UINT.0 => parse_uint(i, len_net),
+        (t, _, len_net) if t == TL_BOOL.0 => parse_bool(i, len_net),
+        (t, len_total, _) if t == TL_LIST.0 => parse_list(i, len_total),
+        (_, _, _) => Err(SmlError::TLUnknownType)
     }
 }
 
@@ -286,58 +286,59 @@ fn parse_tl<T>(tl: u8, i: &mut T) -> Result<SmlTL>
     where T: Iterator<Item=u8>
 {
     if tl & TL_ENDOFMSG.1 == TL_ENDOFMSG.0 {
-        Ok((TL_ENDOFMSG.0, 0))
+        Ok((TL_ENDOFMSG.0, 0, 0))
     } else if tl & TL_OCTET_STR.1 == TL_OCTET_STR.0 {
-        let size = parse_tl_len(tl, i)?;
+        let (size_total, size_net) = parse_tl_len(tl, i, false)?;
 
-        match size {
-            0 => Err(SmlError::TLInvalidLen),
-            _ => Ok((TL_OCTET_STR.0, size)),
-        }
+        Ok((TL_OCTET_STR.0, size_total, size_net))
     } else if tl & TL_BOOL.1 == TL_BOOL.0 {
-        let size = parse_tl_len(tl, i)?;
+        let (size_total, size_net) = parse_tl_len(tl, i, false)?;
 
-        match size {
-            2 => Ok((TL_BOOL.0, size)),
-            l => Err(SmlError::TLInvalidPrimLen(l)),
+        match size_net {
+            1 => Ok((TL_BOOL.0, size_total, size_net)),
+            _ => Err(SmlError::TLInvalidPrimLen(size_total)),
         }
     } else if tl & TL_INT.1 == TL_INT.0 {
-        let size = parse_tl_len(tl, i)?;
+        let (size_total, size_net) = parse_tl_len(tl, i, false)?;
 
-        match size {
-            2 | 3 | 5 | 9 => Ok((TL_INT.0, size)),
-            l => Err(SmlError::TLInvalidPrimLen(l)),
+        match size_net {
+            1 | 2 | 4 | 8 => Ok((TL_INT.0, size_total, size_net)),
+            _ => Err(SmlError::TLInvalidPrimLen(size_total)),
         }
     } else if tl & TL_UINT.1 == TL_UINT.0 {
-        let size = parse_tl_len(tl, i)?;
+        let (size_total, size_net) = parse_tl_len(tl, i, false)?;
 
-        match size {
-            2 | 3 | 5 | 9 => Ok((TL_UINT.0, size)),
-            l => Err(SmlError::TLInvalidPrimLen(l)),
+        match size_net {
+            1 | 2 | 4 | 8 => Ok((TL_UINT.0, size_total, size_net)),
+            _ => Err(SmlError::TLInvalidPrimLen(size_total)),
         }
     } else if tl & TL_LIST.1 == TL_LIST.0 {
-        let size = parse_tl_len(tl, i)?;
+        let (size_total, size_net) = parse_tl_len(tl, i, true)?;
 
-        Ok((TL_LIST.0, size))
+        Ok((TL_LIST.0, size_total, size_net))
     } else {
         Err(SmlError::TLUnknownType)
     }
 }
 
-fn parse_tl_len<T>(tl: u8, i: &mut T) -> Result<usize>
+fn parse_tl_len<T>(tl: u8, i: &mut T, as_net: bool) -> Result<(usize, usize)>
     where T: Iterator<Item=u8>
 {
     let size = tl as usize & 0x0f;
 
     if tl & 0x80 == 0x80 {
-        parse_tl_len_cont(size, i, 4)
+        parse_tl_len_cont(size, i, as_net, 4)
+    } else if as_net {
+        Ok((size, size))
+    } else if size >= 1 {
+        Ok((size, size - 1))
     } else {
-        Ok(size)
+        Err(SmlError::TLInvalidLen)
     }
 }
 
-fn parse_tl_len_cont< T>(size: usize, i: &mut T,
-                         size_bits: usize) -> Result<usize>
+fn parse_tl_len_cont< T>(size: usize, i: &mut T, as_net: bool,
+                         size_bits: usize) -> Result<(usize, usize)>
     where T: Iterator<Item=u8>
 {
     let ld = i.next().ok_or(SmlError::UnexpectedEof)?;
@@ -348,11 +349,16 @@ fn parse_tl_len_cont< T>(size: usize, i: &mut T,
         Err(SmlError::TLLenOutOfBounds)
     } else {
         let new_size = (size << 4) | (ld as usize & 0x0f);
+        let head_size = size_bits / 4 + 1;
 
         if ld & 0x80 == 0x80 {
-            parse_tl_len_cont(new_size, i, size_bits + 4)
+            parse_tl_len_cont(new_size, i, as_net, size_bits + 4)
+        } else if as_net {
+            Ok((new_size, new_size))
+        } else if new_size >= head_size {
+            Ok((new_size, new_size - head_size))
         } else {
-            Ok(new_size)
+            Err(SmlError::TLInvalidLen)
         }
     }
 }
@@ -442,16 +448,16 @@ mod tests {
     #[test]
     fn t_tl_octet_str_simple() {
         assert_eq!(parse_tl(0x01, &mut vec![].into_iter()).unwrap(),
-                   (TL_OCTET_STR.0, 1));
+                   (TL_OCTET_STR.0, 1, 0));
         assert_eq!(parse_tl(0x02, &mut vec![].into_iter()).unwrap(),
-                   (TL_OCTET_STR.0, 2));
+                   (TL_OCTET_STR.0, 2, 1));
     }
 
     #[test]
     fn t_tl_octet_str_doesnt_consume() {
         let dont_touch = &mut vec![ 0x02 ].into_iter();
         assert_eq!(parse_tl(0x0f, dont_touch).unwrap(),
-                   (TL_OCTET_STR.0, 15));
+                   (TL_OCTET_STR.0, 15, 14));
         assert_eq!(dont_touch.next(), Some(0x02));
     }
 
@@ -459,7 +465,7 @@ mod tests {
     fn t_tl_octet_str_cont_single() {
         let cont_iter = &mut vec![ 0x02, 0xff ].into_iter();
         assert_eq!(parse_tl(0x8f, cont_iter).unwrap(),
-                   (TL_OCTET_STR.0, 0xf2));
+                   (TL_OCTET_STR.0, 0xf2, 0xf0));
         assert_eq!(cont_iter.next(), Some(0xff));
     }
 
@@ -468,7 +474,7 @@ mod tests {
         let cont_iter = &mut vec![ 0x82, 0x83, 0x84, 0x85,
                                    0x86, 0x87, 0x08, 0x11 ].into_iter();
         assert_eq!(parse_tl(0x81, cont_iter).unwrap(),
-                   (TL_OCTET_STR.0, 0x1234_5678));
+                   (TL_OCTET_STR.0, 0x1234_5678, 0x1234_5670));
         assert_eq!(cont_iter.next(), Some(0x11));
     }
 
@@ -476,7 +482,7 @@ mod tests {
     fn t_tl_octet_str_strange_len() {
         let cont_iter = &mut vec![ 0x02, 0xff ].into_iter();
         assert_eq!(parse_tl(0x80, cont_iter).unwrap(),
-                   (TL_OCTET_STR.0, 0x02));
+                   (TL_OCTET_STR.0, 0x02, 0));
         assert_eq!(cont_iter.next(), Some(0xff));
     }
 
@@ -487,9 +493,17 @@ mod tests {
     }
 
     #[test]
+    fn t_tl_octet_str_strange_wrong_len() {
+        /* net len of octet string would be -1! */
+        let cont_iter = &mut vec![ 0x80, 0x02, 0xff ].into_iter();
+        assert_eq!(parse_tl(0x80, cont_iter),
+                   Err(SmlError::TLInvalidLen));
+    }
+
+    #[test]
     fn t_tl_bool() {
         assert_eq!(parse_tl(0x42, &mut vec![].into_iter()).unwrap(),
-                   (TL_BOOL.0, 2));
+                   (TL_BOOL.0, 2, 1));
     }
 
     #[test]
@@ -502,35 +516,35 @@ mod tests {
 
     #[test]
     fn t_tl_bool_strange_len() {
-        assert_eq!(parse_tl(0x80 | 0x40, &mut vec![ 0x02 ].into_iter()).unwrap(),
-                   (TL_BOOL.0, 2));
+        assert_eq!(parse_tl(0x80 | 0x40, &mut vec![ 0x03 ].into_iter()).unwrap(),
+                   (TL_BOOL.0, 3, 1));
         assert_eq!(parse_tl(0x80 | 0x40,
-                            &mut vec![ 0x80, 0x02 ].into_iter()).unwrap(),
-                   (TL_BOOL.0, 2));
+                            &mut vec![ 0x80, 0x04 ].into_iter()).unwrap(),
+                   (TL_BOOL.0, 4, 1));
     }
 
     #[test]
     fn t_tl_i8() {
         assert_eq!(parse_tl(0x52, &mut vec![].into_iter()).unwrap(),
-                   (TL_INT.0, 2));
+                   (TL_INT.0, 2, 1));
     }
 
     #[test]
     fn t_tl_i16() {
         assert_eq!(parse_tl(0x53, &mut vec![].into_iter()).unwrap(),
-                   (TL_INT.0, 3));
+                   (TL_INT.0, 3, 2));
     }
 
     #[test]
     fn t_tl_i32() {
         assert_eq!(parse_tl(0x55, &mut vec![].into_iter()).unwrap(),
-                   (TL_INT.0, 5));
+                   (TL_INT.0, 5, 4));
     }
 
     #[test]
     fn t_tl_i64() {
         assert_eq!(parse_tl(0x59, &mut vec![].into_iter()).unwrap(),
-                   (TL_INT.0, 9));
+                   (TL_INT.0, 9, 8));
     }
 
     #[test]
@@ -538,6 +552,8 @@ mod tests {
         for i in 0..15 {
             match i {
                 2 | 3 | 5 | 9 => { },
+                0 =>  assert_eq!(parse_tl(0x50 | 0, &mut vec![].into_iter()),
+                                 Err(SmlError::TLInvalidLen)),
                 l =>  assert_eq!(parse_tl(0x50 | l, &mut vec![].into_iter()),
                                  Err(SmlError::TLInvalidPrimLen(l as usize)))
             }
@@ -547,25 +563,25 @@ mod tests {
     #[test]
     fn t_tl_u8() {
         assert_eq!(parse_tl(0x62, &mut vec![].into_iter()).unwrap(),
-                   (TL_UINT.0, 2));
+                   (TL_UINT.0, 2, 1));
     }
 
     #[test]
     fn t_tl_u16() {
         assert_eq!(parse_tl(0x63, &mut vec![].into_iter()).unwrap(),
-                   (TL_UINT.0, 3));
+                   (TL_UINT.0, 3, 2));
     }
 
     #[test]
     fn t_tl_u32() {
         assert_eq!(parse_tl(0x65, &mut vec![].into_iter()).unwrap(),
-                   (TL_UINT.0, 5));
+                   (TL_UINT.0, 5, 4));
     }
 
     #[test]
     fn t_tl_u64() {
         assert_eq!(parse_tl(0x69, &mut vec![].into_iter()).unwrap(),
-                   (TL_UINT.0, 9));
+                   (TL_UINT.0, 9, 8));
     }
 
     #[test]
@@ -573,8 +589,10 @@ mod tests {
         for i in 0..15 {
             match i {
                 2 | 3 | 5 | 9 => { },
+                0 =>  assert_eq!(parse_tl(0x60 | 0, &mut vec![].into_iter()),
+                                 Err(SmlError::TLInvalidLen)),
                 l =>  assert_eq!(parse_tl(0x60 | l, &mut vec![].into_iter()),
-                                 Err(SmlError::TLInvalidPrimLen(l as usize)))
+                                 Err(SmlError::TLInvalidPrimLen(l as usize))),
             }
         }
     }
@@ -582,15 +600,15 @@ mod tests {
     #[test]
     fn t_tl_list_simple() {
         assert_eq!(parse_tl(0x71, &mut vec![].into_iter()).unwrap(),
-                   (TL_LIST.0, 1));
+                   (TL_LIST.0, 1, 1));
         assert_eq!(parse_tl(0x72, &mut vec![].into_iter()).unwrap(),
-                   (TL_LIST.0, 2));
+                   (TL_LIST.0, 2, 2));
     }
 
     #[test]
     fn t_tl_list_empty() {
         assert_eq!(parse_tl(0x70, &mut vec![].into_iter()).unwrap(),
-                   (TL_LIST.0, 0));
+                   (TL_LIST.0, 0, 0));
     }
 
     #[test]
@@ -598,7 +616,7 @@ mod tests {
         assert_eq!(parse_tl(0x80 | 0x7f,
                             &mut vec![0x8f, 0x8f, 0x8f, 0x8f,
                                       0x8f, 0x8f, 0x0e ].into_iter()).unwrap(),
-                   (TL_LIST.0, 0xffff_fffe));
+                   (TL_LIST.0, 0xffff_fffe, 0xffff_fffe));
     }
 
     #[test]
