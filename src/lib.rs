@@ -100,7 +100,11 @@ struct SmlPreParse<'a, T: Iterator<Item=u8>> {
 
 /* Tuple with decoded SML Type-Length-Field. The first element gives the
  * integer code of the data type, the second element gives the decoded
- * size.
+ * total size, the third the decoded net size. For simple data types the
+ * size given by the TL header gives the size including all bytes of the
+ * TL header, which is handled as total size, the net size subtracts the
+ * header size from the total size. For lists the given size excludes the
+ * header size and gives directly the number of list elements.
  */
 type SmlTL = (u8, usize, usize);
 
