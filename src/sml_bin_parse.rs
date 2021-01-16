@@ -22,7 +22,7 @@ pub enum SmlBinElement {
     Bool(bool),
     List(Vec<SmlBinElement>),
     EndOfMsg,
-}    
+}
 
 /* Tuple with decoded SML Type-Length-Field. The first element gives the
  * integer code of the data type, the second element gives the decoded
@@ -274,7 +274,7 @@ fn parse_list<T>(it: &mut T, len: usize) -> Result<SmlBinElement>
     where T: Iterator<Item=u8>
 {
     let mut list_elements = Vec::new();
-    
+
     for _ in 0..len {
         list_elements.push(sml_bin_el_from_iter(it)?);
     }
