@@ -2,9 +2,12 @@
 
 mod sml_bin_parse;
 mod sml_transport_v1;
+mod sml_message;
+mod sml_unit;
 
 use sml_bin_parse::SmlBinElement;
 use sml_bin_parse::parse_into_binlist;
+use sml_message::SmlMessage;
 
 #[derive(Debug, PartialEq)]
 pub struct SmlBinFile {
@@ -14,42 +17,6 @@ pub struct SmlBinFile {
 pub struct SmlFile {
     messages: Vec<SmlMessage>,
 }
-
-pub struct SmlMessage {
-    transaction_id: Vec<u8>,
-    group_no: u8,
-    abort_on_error: AbortOnError,
-    message_body: SmlMessageBody,
-    crc16: u16,
-}
-
-pub enum AbortOnError {
-    Continue,
-    SkipGroup,
-    AbortAfterGrop,
-    Abort,
-}
-
-pub enum SmlMessageBody {
-    OpenRes(SmlOpenRes),
-}
-
-pub struct SmlOpenRes {
-    codepage: Option<Vec<u8>>,
-    client_id: Option<Vec<u8>>,
-    req_file_id: Vec<u8>,
-    server_id: Vec<u8>,
-    ref_time: Option<SmlTime>,
-    sml_version: Option<u8>,
-}
-
-pub enum SmlTime {
-    SecIndex(u32),
-    TimeStamp(u32),
-    LocalTimeStamp { timestamp: u32,
-                     local_offset: i16,
-                     season_time_offset: i16 },
-}        
 
 #[derive(Debug, PartialEq)]
 pub enum SmlError {
@@ -61,11 +28,15 @@ pub enum SmlError {
     TLLenOutOfBounds,
     UnknownEscapeSequence,
     InvalidPaddingCnt,
+    InvalidSmlMsgStructure,
+    MissingSmlOpenMsg,
+    UnknownMsgId(u32),
+    UnknownTimeFormat(u8),
 }
 
 pub type Result<T> = std::result::Result<T, SmlError>;
 
-pub fn parse_v1<'a, T>(i: &'a mut T)
+pub fn parse_v1_bin<'a, T>(i: &'a mut T)
     -> Result<Option<SmlBinFile>>
     where T: Iterator<Item=u8>
 {

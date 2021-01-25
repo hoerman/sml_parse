@@ -1,12 +1,12 @@
+use super::SmlError;
+use super::Result;
+
 const TL_ENDOFMSG: (u8, u8) = (0x00, 0xff);
 const TL_OCTET_STR: (u8, u8) = (0x00, 0x70);
 const TL_BOOL: (u8, u8) = (0x40, 0x70);
 const TL_INT: (u8, u8) = (0x50, 0x70);
 const TL_UINT: (u8, u8) = (0x60, 0x70);
 const TL_LIST: (u8, u8) = (0x70, 0x70);
-
-use super::SmlError;
-use super::Result;
 
 #[derive(Debug, PartialEq)]
 pub enum SmlBinElement {
