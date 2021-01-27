@@ -63,7 +63,7 @@ mod tests {
     {
         let mut buf = vec![ ].into_iter();
 
-        assert_eq!(parse_v1(&mut buf).unwrap(), None);
+        assert_eq!(parse_v1_bin(&mut buf).unwrap(), None);
     }
 
     #[test]
@@ -71,7 +71,7 @@ mod tests {
     {
         let mut buf = vec![ 0x01, 0x55, 0x03 ].into_iter();
 
-        assert_eq!(parse_v1(&mut buf).unwrap(), None);
+        assert_eq!(parse_v1_bin(&mut buf).unwrap(), None);
     }
 
     #[test]
@@ -94,7 +94,7 @@ mod tests {
             0x55,
         ].into_iter();
 
-        assert_eq!(parse_v1(&mut buf).unwrap(),
+        assert_eq!(parse_v1_bin(&mut buf).unwrap(),
                    Some(SmlBinFile{ messages: build_complex_ref() }));
         assert_eq!(buf.next(), Some(0x55));
     }
@@ -168,10 +168,10 @@ mod tests {
             0x55,
         ].into_iter();
 
-        assert_eq!(parse_v1(&mut buf).unwrap(),
+        assert_eq!(parse_v1_bin(&mut buf).unwrap(),
                    Some(SmlBinFile{ messages: build_complex_ref() }));
 
-        assert_eq!(parse_v1(&mut buf).unwrap(),
+        assert_eq!(parse_v1_bin(&mut buf).unwrap(),
                    Some(SmlBinFile{ messages: build_complex_ref() }));
 
         assert_eq!(buf.next(), Some(0x55));
@@ -212,10 +212,10 @@ mod tests {
             0x55,
         ].into_iter();
 
-        assert_eq!(parse_v1(&mut buf).unwrap(),
+        assert_eq!(parse_v1_bin(&mut buf).unwrap(),
                    Some(SmlBinFile{ messages: build_complex_ref() }));
 
-        assert_eq!(parse_v1(&mut buf).unwrap(),
+        assert_eq!(parse_v1_bin(&mut buf).unwrap(),
                    Some(SmlBinFile{ messages: build_complex_ref() }));
 
         assert_eq!(buf.next(), Some(0x55));
@@ -250,13 +250,13 @@ mod tests {
             0x1b, 0x1b, 0x1b, 0x1b, 0x1a, 0x00, 0x00, 0x00,
         ].into_iter();
 
-        assert_eq!(parse_v1(&mut buf).unwrap(),
+        assert_eq!(parse_v1_bin(&mut buf).unwrap(),
                    Some(SmlBinFile{ messages: build_complex_ref() }));
 
-        assert_eq!(parse_v1(&mut buf).unwrap(),
+        assert_eq!(parse_v1_bin(&mut buf).unwrap(),
                    Some(SmlBinFile{ messages: build_complex_ref() }));
 
-        assert_eq!(parse_v1(&mut buf).unwrap(), None);
+        assert_eq!(parse_v1_bin(&mut buf).unwrap(), None);
     }
 
     #[test]
@@ -301,7 +301,7 @@ mod tests {
             _ => panic!("ref obj doesn't match expectation (0)")
         }
 
-        assert_eq!(parse_v1(&mut buf).unwrap(),
+        assert_eq!(parse_v1_bin(&mut buf).unwrap(),
                    Some(SmlBinFile{ messages: ref_obj }));
         assert_eq!(buf.next(), Some(0x55));
     }
