@@ -24,7 +24,7 @@ pub struct SmlMessage {
 pub enum AbortOnError {
     Continue,
     SkipGroup,
-    AbortAfterGrop,
+    AbortAfterGroup,
     Abort,
 }
 
@@ -150,14 +150,28 @@ fn split_msg_list(list: Vec<SmlBinElement>) -> Result<(Vec<u8>, u8, u8,
     }
 }
 
-fn build_sml_msg(_seq: Vec<u8>, _group: u8, _abort_on_err: u8,
-                 msg: Vec<SmlBinElement>, _crc: u16) -> Result<SmlMessage>
+fn build_sml_msg(seq: Vec<u8>, group: u8, abort_on_err_val: u8,
+                 msg: Vec<SmlBinElement>, crc: u16) -> Result<SmlMessage>
 {
-    let (msg_id, msg_body_vec) = split_msg_body(msg)?;
+    let abort_on_err = abort_on_error_from_u8(abort_on_err_val)?;
 
-    let _msg_body = build_msg_body(msg_id, msg_body_vec)?;
+    let (msg_id, msg_body_vec) = split_msg_body(msg)?;
+    let msg_body = build_msg_body(msg_id, msg_body_vec)?;
     
-    Err(SmlError::InvalidSmlMsgStructure)
+    Ok(SmlMessage { transaction_id: seq, group_no: group,
+                    abort_on_error: abort_on_err, message_body: msg_body,
+                    crc16: crc })
+}
+
+fn abort_on_error_from_u8(val: u8) -> Result<AbortOnError>
+{
+    match val {
+        0x00 => Ok(AbortOnError::Continue),
+        0x01 => Ok(AbortOnError::SkipGroup),
+        0x02 => Ok(AbortOnError::AbortAfterGroup),
+        0xff => Ok(AbortOnError::Abort),
+        _ => Err(SmlError::UnknownAbortOnErrorVal(val))
+    }
 }
 
 fn split_msg_body(msg_body: Vec<SmlBinElement>)

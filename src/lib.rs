@@ -29,6 +29,7 @@ pub enum SmlError {
     UnknownEscapeSequence,
     InvalidPaddingCnt,
     InvalidSmlMsgStructure,
+    UnknownAbortOnErrorVal(u8),
     MissingSmlOpenMsg,
     UnknownMsgId(u32),
     UnknownTimeFormat(u8),
