@@ -43,6 +43,7 @@ pub struct SmlOpenRes {
     sml_version: Option<u8>,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum SmlTime {
     SecIndex(u32),  // [s]
     TimeStamp(u32), // [s] since 01.01.1970 0:00
@@ -270,7 +271,7 @@ fn time_from_list(list: Vec<SmlBinElement>) -> Result<SmlTime>
         (U8(tt), U32(t)) if tt == 0x01 => Ok(SmlTime::SecIndex(t)),
         (U8(tt), U32(t)) if tt == 0x02 => Ok(SmlTime::TimeStamp(t)),
         (U8(tt), List(tl)) if tt == 0x03 => time_local_timestamp_from_list(tl),
-        (U8(tt), _) => Err(SmlError::UnknownTimeFormat(tt)),
+        (U8(tt), _) if tt > 0x03 => Err(SmlError::UnknownTimeFormat(tt)),
         _ => Err(SmlError::InvalidSmlMsgStructure)
     }
 }
@@ -299,6 +300,95 @@ fn u8_option_from_el(el: SmlBinElement) -> Result<Option<u8>>
         U8(val) => Ok(Some(val)),
         OctetString(ostr) if ostr.len() == 0 => Ok(None),
         _ => Err(SmlError::InvalidSmlMsgStructure)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn t_u8_option_from_el_has_u8()
+    {
+        assert_eq!(u8_option_from_el(U8(5)).unwrap(), Some(5));
+    }
+
+    #[test]
+    fn t_u8_option_from_el_none()
+    {
+        assert_eq!(u8_option_from_el(OctetString(vec![])).unwrap(), None);
+    }
+
+    #[test]
+    fn t_u8_option_from_el_wrong_el()
+    {
+        assert_eq!(u8_option_from_el(U16(5)),
+                   Err(SmlError::InvalidSmlMsgStructure));
+    }
+
+    #[test]
+    fn t_time_option_from_el_sec_index()
+    {
+        let el = List(vec![U8(0x01), U32(0x1234_8765)]);
+
+        assert_eq!(time_option_from_el(el).unwrap(),
+                   Some(SmlTime::SecIndex(0x1234_8765)));
+    }
+
+    #[test]
+    fn t_time_option_from_el_time_stamp()
+    {
+        let el = List(vec![U8(0x02), U32(0x4321_8765)]);
+
+        assert_eq!(time_option_from_el(el).unwrap(),
+                   Some(SmlTime::TimeStamp(0x4321_8765)));
+    }
+
+    #[test]
+    fn t_time_option_from_el_local_time_stamp()
+    {
+        let el = List(vec![U8(0x03),
+                           List(vec![U32(0x8765_1234), I16(2), I16(-1)])]);
+
+        assert_eq!(time_option_from_el(el).unwrap(),
+                   Some(SmlTime::LocalTimeStamp{
+                       timestamp: 0x8765_1234,
+                       local_offset: 2,
+                       season_time_offset: -1
+                   }));
+    }
+
+    #[test]
+    fn t_time_option_from_el_none()
+    {
+        assert_eq!(time_option_from_el(OctetString(vec![])).unwrap(), None);
+    }
+
+    #[test]
+    fn t_time_option_from_el_unkown_time_format()
+    {
+        let el = List(vec![U8(0x04), U32(0x1234_8765)]);
+
+        assert_eq!(time_option_from_el(el),
+                   Err(SmlError::UnknownTimeFormat(0x04)));
+    }
+
+    #[test]
+    fn t_time_option_from_el_invalid_structure_on_known_format()
+    {
+        let el = List(vec![U8(0x01), U16(0x8765)]);
+
+        assert_eq!(time_option_from_el(el),
+                   Err(SmlError::InvalidSmlMsgStructure));
+    }
+
+    #[test]
+    fn t_time_option_from_el_long_list_on_known_format()
+    {
+        let el = List(vec![U8(0x01), U32(2), U16(0x8765)]);
+
+        assert_eq!(time_option_from_el(el),
+                   Err(SmlError::InvalidSmlMsgStructure));
     }
 }
 
