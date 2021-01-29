@@ -212,6 +212,10 @@ fn build_open_res_msg_body(body_list: Vec<SmlBinElement>)
          li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
          li.next().ok_or(SmlError::InvalidSmlMsgStructure)?);
 
+    if li.next() != None {
+        return Err(SmlError::InvalidSmlMsgStructure);
+    }
+
     let codepage = octet_str_option_from_el(codepage_el)?;
     let client_id = octet_str_option_from_el(client_id_el)?;
     let req_file_id = octet_str_from_el(req_file_id_el)?;
@@ -263,15 +267,17 @@ fn time_option_from_el(el: SmlBinElement) -> Result<Option<SmlTime>>
 fn time_from_list(list: Vec<SmlBinElement>) -> Result<SmlTime>
 {
     let mut li = list.into_iter();
-    let (time_type_el, time_el) =
+    let (time_type_el, time_el, end) =
         (li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?);
+         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
+         li.next());
 
-    match (time_type_el, time_el) {
-        (U8(tt), U32(t)) if tt == 0x01 => Ok(SmlTime::SecIndex(t)),
-        (U8(tt), U32(t)) if tt == 0x02 => Ok(SmlTime::TimeStamp(t)),
-        (U8(tt), List(tl)) if tt == 0x03 => time_local_timestamp_from_list(tl),
-        (U8(tt), _) if tt > 0x03 => Err(SmlError::UnknownTimeFormat(tt)),
+    match (time_type_el, time_el, end) {
+        (U8(tt), U32(t), None) if tt == 0x01 => Ok(SmlTime::SecIndex(t)),
+        (U8(tt), U32(t), None) if tt == 0x02 => Ok(SmlTime::TimeStamp(t)),
+        (U8(tt), List(tl), None) if tt == 0x03 =>
+            time_local_timestamp_from_list(tl),
+        (U8(tt), _, _) if tt > 0x03 => Err(SmlError::UnknownTimeFormat(tt)),
         _ => Err(SmlError::InvalidSmlMsgStructure)
     }
 }
@@ -279,13 +285,14 @@ fn time_from_list(list: Vec<SmlBinElement>) -> Result<SmlTime>
 fn time_local_timestamp_from_list(list: Vec<SmlBinElement>) -> Result<SmlTime>
 {
     let mut li = list.into_iter();
-    let (timestamp_el, local_offset_el, season_time_offset_el) =
+    let (timestamp_el, local_offset_el, season_time_offset_el, end) =
         (li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
          li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?);
+         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
+         li.next());
 
-    match (timestamp_el, local_offset_el, season_time_offset_el) {
-        (U32(ts), I16(l_offs), I16(season_offs)) =>
+    match (timestamp_el, local_offset_el, season_time_offset_el, end) {
+        (U32(ts), I16(l_offs), I16(season_offs), None) =>
             Ok(SmlTime::LocalTimeStamp { timestamp: ts,
                                          local_offset: l_offs,
                                          season_time_offset: season_offs,
@@ -388,6 +395,55 @@ mod tests {
         let el = List(vec![U8(0x01), U32(2), U16(0x8765)]);
 
         assert_eq!(time_option_from_el(el),
+                   Err(SmlError::InvalidSmlMsgStructure));
+    }
+
+    #[test]
+    fn t_time_option_from_el_local_time_stamp_long_list()
+    {
+        let el = List(vec![U8(0x03),
+                           List(vec![U32(0x8765_1234), I16(2), I16(-1), U8(1)])]);
+
+        assert_eq!(time_option_from_el(el),
+                   Err(SmlError::InvalidSmlMsgStructure));
+    }
+
+    #[test]
+    fn t_octet_str_from_el()
+    {
+        assert_eq!(octet_str_from_el(OctetString(vec![])).unwrap(),
+                   vec![]);
+
+        assert_eq!(octet_str_from_el(OctetString(vec![0x01, 0x02])).unwrap(),
+                   vec![0x01, 0x02]);
+    }
+
+    #[test]
+    fn t_octet_str_from_el_wrong_element()
+    {
+        assert_eq!(octet_str_from_el(U8(5)),
+                   Err(SmlError::InvalidSmlMsgStructure));
+    }
+
+    #[test]
+    fn t_octet_str_option_from_el()
+    {
+        assert_eq!(
+            octet_str_option_from_el(OctetString(vec![0x01, 0x02])).unwrap(),
+            Some(vec![0x01, 0x02])
+        );
+    }
+
+    #[test]
+    fn t_octet_str_option_from_el_none()
+    {
+        assert_eq!(octet_str_option_from_el(OctetString(vec![])).unwrap(), None);
+    }
+
+    #[test]
+    fn t_octet_str_option_from_el_wrong_element()
+    {
+        assert_eq!(octet_str_option_from_el(List(vec![])),
                    Err(SmlError::InvalidSmlMsgStructure));
     }
 }
