@@ -496,7 +496,42 @@ mod tests {
     #[test]
     fn t_build_open_res_msg_body_all_optional()
     {
+        let list = vec![
+            OctetString(vec![]),
+            OctetString(vec![]),
+            OctetString(vec![0x15, 0x06, 0x27, 0x08]),
+            OctetString(vec![0x10, 0x20, 0x33, 0x40, 0x55]),
+            OctetString(vec![]),
+            OctetString(vec![])
+        ];
+
+        assert_eq!(build_open_res_msg_body(list).unwrap(),
+                   OpenRes(SmlOpenRes {
+                       codepage: None,
+                       client_id: None,
+                       req_file_id: vec![0x15, 0x06, 0x27, 0x08],
+                       server_id: vec![0x10, 0x20, 0x33, 0x40, 0x55],
+                       ref_time: None,
+                       sml_version: None,
+                    }));
+
     }
 
+    #[test]
+    fn t_build_open_res_msg_body_long_list()
+    {
+        let list = vec![
+            OctetString(vec![]),
+            OctetString(vec![]),
+            OctetString(vec![0x15, 0x06, 0x27, 0x08]),
+            OctetString(vec![0x10, 0x20, 0x33, 0x40, 0x55]),
+            OctetString(vec![]),
+            OctetString(vec![]),
+            OctetString(vec![])
+        ];
+
+        assert_eq!(build_open_res_msg_body(list),
+                   Err(SmlError::InvalidSmlMsgStructure));
+    }
 }
 
