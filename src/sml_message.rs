@@ -9,6 +9,8 @@ use crate::sml_unit::SmlUnit;
 use crate::sml_bin_parse::SmlBinElement;
 use crate::sml_bin_parse::SmlBinElement::*;
 
+use SmlMessageBody::*;
+
 const MSG_ID_OPEN_RES: u32 = 0x0101;
 const MSG_ID_CLOSE_RES: u32 = 0x0201;
 const MSG_ID_LIST_RES: u32 = 0x0701;
@@ -28,12 +30,14 @@ pub enum AbortOnError {
     Abort,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum SmlMessageBody {
     OpenRes(SmlOpenRes),
     CloseRes(SmlCloseRes),
     ListRes(SmlListRes),
 }
 
+#[derive(Debug, PartialEq)]
 pub struct SmlOpenRes {
     codepage: Option<Vec<u8>>,
     client_id: Option<Vec<u8>>,
@@ -53,10 +57,12 @@ pub enum SmlTime {
     },
 }
 
+#[derive(Debug, PartialEq)]
 pub struct SmlCloseRes {
     global_signature: Option<Vec<u8>>
 }
 
+#[derive(Debug, PartialEq)]
 pub struct SmlListRes {
     client_id: Option<Vec<u8>>,
     server_id: Vec<u8>,
@@ -67,6 +73,7 @@ pub struct SmlListRes {
     act_gateway_time: Option<SmlTime>,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct SmlListEntry {
     obj_name: Vec<u8>,
     status: Option<SmlStatus>,
@@ -77,6 +84,7 @@ pub struct SmlListEntry {
     value_signature: Option<Vec<u8>>,
 }
 
+#[derive(Debug, PartialEq)]
 pub enum SmlStatus {
     Status8(u8),
     Status16(u16),
@@ -84,6 +92,7 @@ pub enum SmlStatus {
     Status64(u64),
 }
 
+#[derive(Debug, PartialEq)]
 pub enum SmlValue {
     BoolVal(bool),
     ByteList(Vec<u8>),
@@ -98,10 +107,11 @@ pub enum SmlValue {
     SmlList(SmlListType),
 }
 
+#[derive(Debug, PartialEq)]
 pub enum SmlListType {
     SmlTime(SmlTime),
 }
-    
+
 pub fn bin_file_to_sml(bin: SmlBinFile) -> Result<SmlFile>
 {
     let mut el_iter = bin.messages.into_iter();
@@ -223,7 +233,7 @@ fn build_open_res_msg_body(body_list: Vec<SmlBinElement>)
     let ref_time = time_option_from_el(ref_time_el)?;
     let sml_version = u8_option_from_el(sml_version_el)?;
 
-    Ok(SmlMessageBody::OpenRes(
+    Ok(OpenRes(
         SmlOpenRes {
             codepage: codepage,
             client_id: client_id,
@@ -446,5 +456,34 @@ mod tests {
         assert_eq!(octet_str_option_from_el(List(vec![])),
                    Err(SmlError::InvalidSmlMsgStructure));
     }
+
+    #[test]
+    fn t_build_open_res_msg_body()
+    {
+        let list = vec![
+            OctetString(vec![0x01]),
+            OctetString(vec![0x04, 0x03, 0x02, 0x01]),
+            OctetString(vec![0x05, 0x06, 0x07, 0x08]),
+            OctetString(vec![0x10, 0x20, 0x30, 0x40]),
+            List(vec![U8(0x01), U32(0x1234_5678)]),
+            U8(0x01)
+        ];
+
+        assert_eq!(build_open_res_msg_body(list).unwrap(),
+                   OpenRes(SmlOpenRes {
+                       codepage: Some(vec![0x01]),
+                       client_id: Some(vec![0x04, 0x03, 0x02, 0x01]),
+                       req_file_id: vec![0x05, 0x06, 0x07, 0x08],
+                       server_id: vec![0x10, 0x20, 0x30, 0x40],
+                       ref_time: Some(SmlTime::SecIndex(0x1234_5678)),
+                       sml_version: Some(0x01),
+                    }));
+    }
+
+    #[test]
+    fn t_build_open_res_msg_body_all_optional()
+    {
+    }
+
 }
 
