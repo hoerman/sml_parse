@@ -112,6 +112,25 @@ pub enum SmlListType {
     SmlTime(SmlTime),
 }
 
+trait MessageListIter : Iterator {
+    fn next_el(&mut self) -> Result<Self::Item>
+    {
+        self.next().ok_or(SmlError::InvalidSmlMsgStructure)
+    }
+
+    fn last_el(&mut self) -> Result<Self::Item>
+    {
+        let el = self.next_el()?;
+
+        match self.next() {
+            None => Ok(el),
+            _ => Err(SmlError::InvalidSmlMsgStructure)
+        }
+    }
+}
+
+impl<T> MessageListIter for std::vec::IntoIter<T> {}
+
 pub fn bin_file_to_sml(bin: SmlBinFile) -> Result<SmlFile>
 {
     let mut el_iter = bin.messages.into_iter();
@@ -146,12 +165,12 @@ fn split_msg_list(list: Vec<SmlBinElement>) -> Result<(Vec<u8>, u8, u8,
 {
     let mut li = list.into_iter();
     let (seq_el, group_el, abort_on_error_el, msg_el, crc_el, eom) =
-        (li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?);
+        (li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.next_el()?);
          
     match (seq_el, group_el, abort_on_error_el, msg_el, crc_el, eom) {
         (OctetString(seq), U8(group), U8(abort_on_error),
@@ -189,8 +208,8 @@ fn split_msg_body(msg_body: Vec<SmlBinElement>)
     -> Result<(u32, Vec<SmlBinElement>)>
 {
     let mut bi = msg_body.into_iter();
-    let (id_el, body_el) = (bi.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-                            bi.next().ok_or(SmlError::InvalidSmlMsgStructure)?);
+    let (id_el, body_el) = (bi.next_el()?,
+                            bi.next_el()?);
 
     match (id_el, body_el) {
         (U8(id_el), List(msg)) => Ok((id_el as u32, msg)),
@@ -215,16 +234,12 @@ fn build_open_res_msg_body(body_list: Vec<SmlBinElement>)
     let mut li = body_list.into_iter();
     let (codepage_el, client_id_el, req_file_id_el,
          server_id_el, ref_time_el, sml_version_el) =
-        (li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?);
-
-    if li.next() != None {
-        return Err(SmlError::InvalidSmlMsgStructure);
-    }
+        (li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.last_el()?);
 
     let codepage = octet_str_option_from_el(codepage_el)?;
     let client_id = octet_str_option_from_el(client_id_el)?;
@@ -277,17 +292,16 @@ fn time_option_from_el(el: SmlBinElement) -> Result<Option<SmlTime>>
 fn time_from_list(list: Vec<SmlBinElement>) -> Result<SmlTime>
 {
     let mut li = list.into_iter();
-    let (time_type_el, time_el, end) =
-        (li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next());
+    let (time_type_el, time_el) =
+        (li.next_el()?,
+         li.last_el()?);
 
-    match (time_type_el, time_el, end) {
-        (U8(tt), U32(t), None) if tt == 0x01 => Ok(SmlTime::SecIndex(t)),
-        (U8(tt), U32(t), None) if tt == 0x02 => Ok(SmlTime::TimeStamp(t)),
-        (U8(tt), List(tl), None) if tt == 0x03 =>
+    match (time_type_el, time_el) {
+        (U8(tt), U32(t)) if tt == 0x01 => Ok(SmlTime::SecIndex(t)),
+        (U8(tt), U32(t)) if tt == 0x02 => Ok(SmlTime::TimeStamp(t)),
+        (U8(tt), List(tl)) if tt == 0x03 =>
             time_local_timestamp_from_list(tl),
-        (U8(tt), _, _) if tt > 0x03 => Err(SmlError::UnknownTimeFormat(tt)),
+        (U8(tt), _) if tt > 0x03 => Err(SmlError::UnknownTimeFormat(tt)),
         _ => Err(SmlError::InvalidSmlMsgStructure)
     }
 }
@@ -295,14 +309,13 @@ fn time_from_list(list: Vec<SmlBinElement>) -> Result<SmlTime>
 fn time_local_timestamp_from_list(list: Vec<SmlBinElement>) -> Result<SmlTime>
 {
     let mut li = list.into_iter();
-    let (timestamp_el, local_offset_el, season_time_offset_el, end) =
-        (li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next().ok_or(SmlError::InvalidSmlMsgStructure)?,
-         li.next());
+    let (timestamp_el, local_offset_el, season_time_offset_el) =
+        (li.next_el()?,
+         li.next_el()?,
+         li.last_el()?);
 
-    match (timestamp_el, local_offset_el, season_time_offset_el, end) {
-        (U32(ts), I16(l_offs), I16(season_offs), None) =>
+    match (timestamp_el, local_offset_el, season_time_offset_el) {
+        (U32(ts), I16(l_offs), I16(season_offs)) =>
             Ok(SmlTime::LocalTimeStamp { timestamp: ts,
                                          local_offset: l_offs,
                                          season_time_offset: season_offs,
