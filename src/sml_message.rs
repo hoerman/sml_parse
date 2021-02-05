@@ -224,6 +224,7 @@ fn build_msg_body(msg_id: u32,
 {
     match msg_id {
         MSG_ID_OPEN_RES => build_open_res_msg_body(body_list),
+        MSG_ID_CLOSE_RES => build_close_res_msg_body(body_list),
         _ => Err(SmlError::UnknownMsgId(msg_id)),
     }
 }
@@ -331,6 +332,21 @@ fn u8_option_from_el(el: SmlBinElement) -> Result<Option<u8>>
         OctetString(ostr) if ostr.len() == 0 => Ok(None),
         _ => Err(SmlError::InvalidSmlMsgStructure)
     }
+}
+
+fn build_close_res_msg_body(body_list: Vec<SmlBinElement>)
+    -> Result<SmlMessageBody>
+{
+    let mut li = body_list.into_iter();
+    let global_sig_el = li.last_el()?;
+
+    let global_sig = octet_str_option_from_el(global_sig_el)?;
+
+    Ok(CloseRes(
+        SmlCloseRes {
+            global_signature: global_sig
+        })
+    )
 }
 
 #[cfg(test)]
@@ -531,6 +547,45 @@ mod tests {
         ];
 
         assert_eq!(build_open_res_msg_body(list),
+                   Err(SmlError::InvalidSmlMsgStructure));
+    }
+
+    #[test]
+    fn t_build_close_res_msg_body()
+    {
+        let list = vec![
+            OctetString(vec![0x01, 0x02, 0x03, 0x04, 0x10, 0x20])
+        ];
+
+        assert_eq!(build_close_res_msg_body(list).unwrap(),
+                   CloseRes(SmlCloseRes {
+                       global_signature: Some(vec![0x01, 0x02, 0x03,
+                                                   0x04, 0x10, 0x20]),
+                    }));
+    }
+
+    #[test]
+    fn t_build_close_res_msg_body_all_optional()
+    {
+        let list = vec![
+            OctetString(vec![])
+        ];
+
+        assert_eq!(build_close_res_msg_body(list).unwrap(),
+                   CloseRes(SmlCloseRes {
+                       global_signature: None,
+                    }));
+    }
+
+    #[test]
+    fn t_build_close_res_msg_body_long_list()
+    {
+        let list = vec![
+            OctetString(vec![]),
+            U8(1),
+        ];
+
+        assert_eq!(build_close_res_msg_body(list),
                    Err(SmlError::InvalidSmlMsgStructure));
     }
 }
