@@ -1,28 +1,28 @@
-/* Todo: - throw error in the msg splitting functions if list to split
- *         contains unexpected additional elements
- */
 use crate::SmlError;
 use crate::SmlBinFile;
 use crate::SmlFile;
 use crate::Result;
-use crate::sml_unit::SmlUnit;
+use crate::sml_unit::*;
 use crate::sml_bin_parse::SmlBinElement;
 use crate::sml_bin_parse::SmlBinElement::*;
 
 use SmlMessageBody::*;
+use SmlValue::*;
 
 const MSG_ID_OPEN_RES: u32 = 0x0101;
 const MSG_ID_CLOSE_RES: u32 = 0x0201;
 const MSG_ID_LIST_RES: u32 = 0x0701;
 
+#[derive(Debug)]
 pub struct SmlMessage {
     transaction_id: Vec<u8>,
     group_no: u8,
     abort_on_error: AbortOnError,
-    message_body: SmlMessageBody,
+    pub message_body: SmlMessageBody,
     crc16: u16,
 }
 
+#[derive(Debug)]
 pub enum AbortOnError {
     Continue,
     SkipGroup,
@@ -68,19 +68,19 @@ pub struct SmlListRes {
     server_id: Vec<u8>,
     list_name: Option<Vec<u8>>,
     act_sensor_time: Option<SmlTime>,
-    val_list: Vec<SmlListEntry>,
+    pub val_list: Vec<SmlListEntry>,
     list_signature: Option<Vec<u8>>,
     act_gateway_time: Option<SmlTime>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct SmlListEntry {
-    obj_name: Vec<u8>,
+    pub obj_name: Vec<u8>,
     status: Option<SmlStatus>,
     val_time: Option<SmlTime>,
-    unit: Option<SmlUnit>,
-    scaler: Option<i8>,
-    value: SmlValue,
+    pub unit: Option<SmlUnit>,
+    pub scaler: Option<i8>,
+    pub value: SmlValue,
     value_signature: Option<Vec<u8>>,
 }
 
@@ -135,18 +135,31 @@ pub fn bin_file_to_sml(bin: SmlBinFile) -> Result<SmlFile>
 {
     let mut el_iter = bin.messages.into_iter();
 
-    let _open_res = read_open_el(el_iter.next()
+    let open_res = read_open_el(el_iter.next()
                                 .ok_or(SmlError::MissingSmlOpenMsg)?)?;
 
-    Err(SmlError::MissingSmlOpenMsg)
+    let mut res = Vec::new();
+
+    res.push(open_res);
+
+    for el in el_iter {
+        res.push(sml_bin_element_to_message(el)?);
+    }
+
+    match res.last().ok_or(SmlError::MissingSmlCloseMsg)?.message_body {
+        SmlMessageBody::CloseRes(_) => Ok(SmlFile { messages: res }),
+        _ => Err(SmlError::MissingSmlCloseMsg)
+    }
 }
 
 fn read_open_el(el: SmlBinElement) -> Result<SmlMessage>
 {
-    let _msg = sml_bin_element_to_message(el)?;
-    
-    //    match bin_element_to_message(el) {}
-    Err(SmlError::MissingSmlOpenMsg)
+    let msg = sml_bin_element_to_message(el)?;
+
+    match msg.message_body {
+        SmlMessageBody::OpenRes(_) => Ok(msg),
+        _ => Err(SmlError::MissingSmlOpenMsg)
+    }
 }
 
 fn sml_bin_element_to_message(el: SmlBinElement) -> Result<SmlMessage>
@@ -225,6 +238,7 @@ fn build_msg_body(msg_id: u32,
     match msg_id {
         MSG_ID_OPEN_RES => build_open_res_msg_body(body_list),
         MSG_ID_CLOSE_RES => build_close_res_msg_body(body_list),
+        MSG_ID_LIST_RES => build_get_list_res_msg_body(body_list),
         _ => Err(SmlError::UnknownMsgId(msg_id)),
     }
 }
@@ -347,6 +361,143 @@ fn build_close_res_msg_body(body_list: Vec<SmlBinElement>)
             global_signature: global_sig
         })
     )
+}
+
+fn build_get_list_res_msg_body(body_list: Vec<SmlBinElement>)
+    -> Result<SmlMessageBody>
+{
+    let mut li = body_list.into_iter();
+    let (client_id_el, server_id_el, list_name_el, act_sensor_time_el,
+         val_list_el, list_sig_el, act_gateway_time_el) =
+        (li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.last_el()?);
+
+    let client_id = octet_str_option_from_el(client_id_el)?;
+    let server_id = octet_str_from_el(server_id_el)?;
+    let list_name = octet_str_option_from_el(list_name_el)?;
+    let act_sensor_time = time_option_from_el(act_sensor_time_el)?;
+    let val_list = value_list_from_el(val_list_el)?;
+    let list_sig = octet_str_option_from_el(list_sig_el)?;
+    let act_gateway_time = time_option_from_el(act_gateway_time_el)?;
+
+    Ok(ListRes(
+        SmlListRes {
+            client_id: client_id,
+            server_id: server_id,
+            list_name: list_name,
+            act_sensor_time: act_sensor_time,
+            val_list: val_list,
+            list_signature: list_sig,
+            act_gateway_time: act_gateway_time,
+        })
+    )
+}
+
+fn value_list_from_el(value_list: SmlBinElement)
+    -> Result<Vec<SmlListEntry>>
+{
+    match value_list {
+        List(list) => list_from_sml_list(list),
+        _ => Err(SmlError::InvalidSmlMsgStructure)
+    }
+}
+
+fn list_from_sml_list(list: Vec<SmlBinElement>) -> Result<Vec<SmlListEntry>>
+{
+    list.into_iter().map(|entry| list_entry_from_el(entry)).collect()
+}
+
+fn list_entry_from_el(entry: SmlBinElement) -> Result<SmlListEntry>
+{
+    match entry {
+        List(list) => list_entry_from_sml_list(list),
+        _ => Err(SmlError::InvalidSmlMsgStructure)
+    }
+}
+
+fn list_entry_from_sml_list(list: Vec<SmlBinElement>) -> Result<SmlListEntry>
+{
+    let mut li = list.into_iter();
+    let (obj_name_el, status_el, val_time_el, unit_el, scaler_el,
+         value_el, signature_el) =
+        (li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.next_el()?,
+         li.last_el()?);
+
+    let obj_name = octet_str_from_el(obj_name_el)?;
+    let status = status_option_from_el(status_el)?;
+    let val_time = time_option_from_el(val_time_el)?;
+    let unit = unit_option_from_el(unit_el)?;
+    let scaler = i8_option_from_el(scaler_el)?;
+    let value = value_from_el(value_el)?;
+    let value_signature = octet_str_option_from_el(signature_el)?;
+
+    Ok(SmlListEntry {
+        obj_name,
+        status,
+        val_time,
+        unit,
+        scaler,
+        value,
+        value_signature
+    })
+}
+
+fn status_option_from_el(el: SmlBinElement) -> Result<Option<SmlStatus>>
+{
+    match el {
+        U8(val) => Ok(Some(SmlStatus::Status8(val))),
+        U16(val) => Ok(Some(SmlStatus::Status16(val))),
+        U32(val) => Ok(Some(SmlStatus::Status32(val))),
+        U64(val) => Ok(Some(SmlStatus::Status64(val))),
+        OctetString(ostr) if ostr.len() == 0 => Ok(None),
+        _ => Err(SmlError::InvalidSmlMsgStructure)
+    }
+}
+
+fn unit_option_from_el(el: SmlBinElement) -> Result<Option<SmlUnit>>
+{
+    match el {
+        U8(val) => Ok(Some(sml_unit_from_u8(val))),
+        OctetString(ostr) if ostr.len() == 0 => Ok(None),
+        _ => Err(SmlError::InvalidSmlMsgStructure),
+    }
+}
+
+fn i8_option_from_el(el: SmlBinElement) -> Result<Option<i8>>
+{
+    match el {
+        I8(val) => Ok(Some(val)),
+        OctetString(ostr) if ostr.len() == 0 => Ok(None),
+        _ => Err(SmlError::InvalidSmlMsgStructure)
+    }
+}
+
+fn value_from_el(el: SmlBinElement) -> Result<SmlValue>
+{
+    match el {
+        Bool(val) => Ok(BoolVal(val)),
+        OctetString(list) => Ok(ByteList(list)),
+        I8(val) => Ok(Int8Val(val)),
+        I16(val) => Ok(Int16Val(val)),
+        I32(val) => Ok(Int32Val(val)),
+        I64(val) => Ok(Int64Val(val)),
+        U8(val) => Ok(UInt8Val(val)),
+        U16(val) => Ok(UInt16Val(val)),
+        U32(val) => Ok(UInt32Val(val)),
+        U64(val) => Ok(UInt64Val(val)),
+        List(list) => Ok(SmlList(SmlListType::SmlTime(time_from_list(list)?))),
+        _ => Err(SmlError::InvalidSmlMsgStructure)
+    }
 }
 
 #[cfg(test)]

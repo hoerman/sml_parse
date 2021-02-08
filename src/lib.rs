@@ -2,7 +2,7 @@
 
 mod sml_bin_parse;
 mod sml_transport_v1;
-mod sml_message;
+pub mod sml_message;
 mod sml_unit;
 
 use sml_bin_parse::SmlBinElement;
@@ -14,8 +14,9 @@ pub struct SmlBinFile {
     messages: Vec<SmlBinElement>,
 }
 
+#[derive(Debug)]
 pub struct SmlFile {
-    messages: Vec<SmlMessage>,
+    pub messages: Vec<SmlMessage>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -31,6 +32,7 @@ pub enum SmlError {
     InvalidSmlMsgStructure,
     UnknownAbortOnErrorVal(u8),
     MissingSmlOpenMsg,
+    MissingSmlCloseMsg,
     UnknownMsgId(u32),
     UnknownTimeFormat(u8),
 }
