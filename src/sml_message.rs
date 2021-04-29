@@ -42,7 +42,7 @@ pub struct SmlOpenRes {
     codepage: Option<Vec<u8>>,
     client_id: Option<Vec<u8>>,
     req_file_id: Vec<u8>,
-    server_id: Vec<u8>,
+    pub server_id: Vec<u8>,
     ref_time: Option<SmlTime>,
     sml_version: Option<u8>,
 }
