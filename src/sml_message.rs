@@ -13,7 +13,7 @@ const MSG_ID_OPEN_RES: u32 = 0x0101;
 const MSG_ID_CLOSE_RES: u32 = 0x0201;
 const MSG_ID_LIST_RES: u32 = 0x0701;
 
-#[derive(Debug)]
+#[derive(Clone,Debug)]
 pub struct SmlMessage {
     transaction_id: Vec<u8>,
     group_no: u8,
@@ -22,7 +22,7 @@ pub struct SmlMessage {
     crc16: u16,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum AbortOnError {
     Continue,
     SkipGroup,
@@ -30,14 +30,14 @@ pub enum AbortOnError {
     Abort,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SmlMessageBody {
     OpenRes(SmlOpenRes),
     CloseRes(SmlCloseRes),
     ListRes(SmlListRes),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SmlOpenRes {
     codepage: Option<Vec<u8>>,
     client_id: Option<Vec<u8>>,
@@ -47,7 +47,7 @@ pub struct SmlOpenRes {
     sml_version: Option<u8>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SmlTime {
     SecIndex(u32),  // [s]
     TimeStamp(u32), // [s] since 01.01.1970 0:00
@@ -57,12 +57,12 @@ pub enum SmlTime {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SmlCloseRes {
     global_signature: Option<Vec<u8>>
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SmlListRes {
     client_id: Option<Vec<u8>>,
     server_id: Vec<u8>,
@@ -73,7 +73,7 @@ pub struct SmlListRes {
     act_gateway_time: Option<SmlTime>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SmlListEntry {
     pub obj_name: Vec<u8>,
     status: Option<SmlStatus>,
@@ -84,7 +84,7 @@ pub struct SmlListEntry {
     value_signature: Option<Vec<u8>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SmlStatus {
     Status8(u8),
     Status16(u16),
@@ -92,7 +92,7 @@ pub enum SmlStatus {
     Status64(u64),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SmlValue {
     BoolVal(bool),
     ByteList(Vec<u8>),
@@ -107,7 +107,7 @@ pub enum SmlValue {
     SmlList(SmlListType),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum SmlListType {
     SmlTime(SmlTime),
 }

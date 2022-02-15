@@ -14,7 +14,7 @@ pub struct SmlBinFile {
     messages: Vec<SmlBinElement>,
 }
 
-#[derive(Debug)]
+#[derive(Clone,Debug)]
 pub struct SmlFile {
     pub messages: Vec<SmlMessage>,
 }
