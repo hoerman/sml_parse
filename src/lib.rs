@@ -37,6 +37,30 @@ pub enum SmlError {
     UnknownTimeFormat(u8),
 }
 
+impl SmlError {
+    pub fn is_final(&self) -> bool {
+        match self {
+            SmlError::NoError |
+            SmlError::TLUnknownType |
+            SmlError::TLInvalidLen |
+            SmlError::TLInvalidPrimLen(_) |
+            SmlError::TLLenOutOfBounds |
+            SmlError::UnknownEscapeSequence |
+            SmlError::InvalidPaddingCnt |
+            SmlError::InvalidSmlMsgStructure |
+            SmlError::UnknownAbortOnErrorVal(_) |
+            SmlError::MissingSmlOpenMsg |
+            SmlError::MissingSmlCloseMsg |
+            SmlError::UnknownMsgId(_) |
+            SmlError::UnknownTimeFormat(_) =>
+                false,
+
+            SmlError::UnexpectedEof =>
+                true
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, SmlError>;
 
 pub fn parse_v1_bin<'a, T>(i: &'a mut T)
